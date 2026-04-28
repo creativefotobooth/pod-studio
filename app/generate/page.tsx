@@ -76,7 +76,7 @@ export default function GeneratePage() {
               {/* Niche */}
               <div className="space-y-2">
                 <Label>Niche</Label>
-                <Select value={niche} onValueChange={setNiche}>
+                <Select value={niche} onValueChange={(v) => v && setNiche(v)}>
                   <SelectTrigger>
                     <SelectValue />
                   </SelectTrigger>
@@ -93,7 +93,7 @@ export default function GeneratePage() {
               {/* Layout */}
               <div className="space-y-2">
                 <Label>Layout</Label>
-                <Select value={layout} onValueChange={setLayout}>
+                <Select value={layout} onValueChange={(v) => v && setLayout(v)}>
                   <SelectTrigger>
                     <SelectValue />
                   </SelectTrigger>

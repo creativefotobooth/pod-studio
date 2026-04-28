@@ -112,7 +112,7 @@ export default function GeneratePage() {
                 <Label>Quantity: {quantity[0]}</Label>
                 <Slider
                   value={quantity}
-                  onValueChange={setQuantity}
+                  onValueChange={(v) => setQuantity(Array.isArray(v) ? v : [v])}
                   min={1}
                   max={20}
                   step={1}

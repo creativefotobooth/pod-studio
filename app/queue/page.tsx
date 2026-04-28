@@ -106,7 +106,6 @@ export default function QueuePage() {
             </TabsTrigger>
           </TabsList>
 
-          {\/* Pending Review Tab */}
           <TabsContent value="pending">
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
               {pendingReview.length === 0 ? (
@@ -178,7 +177,6 @@ export default function QueuePage() {
             </div>
           </TabsContent>
 
-          {\/* Approved Tab */}
           <TabsContent value="approved">
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
               {approvedDesigns.length === 0 ? (
@@ -240,7 +238,6 @@ export default function QueuePage() {
             </div>
           </TabsContent>
 
-          {\/* Published Tab */}
           <TabsContent value="published">
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
               {publishedDesigns.length === 0 ? (

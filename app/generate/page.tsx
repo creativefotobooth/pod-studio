@@ -73,7 +73,7 @@ export default function GeneratePage() {
           </CardHeader>
           <CardContent className="space-y-6">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              <!-- Niche -->
+              {/* Niche */}
               <div className="space-y-2">
                 <Label>Niche</Label>
                 <Select value={niche} onValueChange={setNiche}>
@@ -90,7 +90,7 @@ export default function GeneratePage() {
                 </Select>
               </div>
 
-              <!-- Layout -->
+              {/* Layout */}
               <div className="space-y-2">
                 <Label>Layout</Label>
                 <Select value={layout} onValueChange={setLayout}>
@@ -107,7 +107,7 @@ export default function GeneratePage() {
                 </Select>
               </div>
 
-              <!-- Quantity -->
+              {/* Quantity */}
               <div className="space-y-2">
                 <Label>Quantity: {quantity[0]}</Label>
                 <Slider
@@ -119,7 +119,7 @@ export default function GeneratePage() {
                 />
               </div>
 
-              <!-- Product Type -->
+              {/* Product Type */}
               <div className="space-y-2">
                 <Label>Product Type</Label>
                 <div className="flex gap-4">
@@ -159,7 +159,7 @@ export default function GeneratePage() {
           </CardContent>
         </Card>
 
-        <!-- Results Grid -->
+        {/* Results Grid */}
         {results.length > 0 && (
           <div className="space-y-4">
             <h2 className="text-2xl font-bold">Generated Designs</h2>

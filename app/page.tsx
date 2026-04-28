@@ -43,7 +43,7 @@ export default function Dashboard() {
       <Header />
       
       <main className="max-w-7xl mx-auto p-6 space-y-6">
-        <!-- Stats Row -->
+        {/* Stats Row */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
           <StatsCard
             title="Total Products"
@@ -72,7 +72,7 @@ export default function Dashboard() {
           />
         </div>
 
-        <!-- Generate CTA -->
+        {/* Generate CTA */}
         <Card className="bg-gradient-to-r from-blue-600 to-purple-600 text-white">
           <CardContent className="flex flex-col md:flex-row items-center justify-between py-8 px-6">
             <div className="space-y-2 text-center md:text-left">
@@ -91,7 +91,7 @@ export default function Dashboard() {
         </Card>
 
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          <!-- Recent Ratings -->
+          {/* Recent Ratings */}
           <Card>
             <CardHeader className="flex flex-row items-center justify-between">
               <CardTitle>Recent Ratings</CardTitle>
@@ -130,7 +130,7 @@ export default function Dashboard() {
             </CardContent>
           </Card>
 
-          <!-- Quick Actions -->
+          {/* Quick Actions */}
           <Card>
             <CardHeader>
               <CardTitle>Quick Links</CardTitle>

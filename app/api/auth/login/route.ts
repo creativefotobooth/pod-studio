@@ -10,7 +10,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Invalid password' }, { status: 401 });
   }
 
-  const token = signToken({ role: 'admin' });
+  const token = await signToken({ role: 'admin' });
   
   const response = NextResponse.json({ ok: true });
   response.cookies.set('pod_studio_session', token, {

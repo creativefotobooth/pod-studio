@@ -1,14 +1,20 @@
-import jwt from 'jsonwebtoken';
+import { SignJWT, jwtVerify } from 'jose';
 
 const JWT_SECRET = process.env.POD_STUDIO_JWT_SECRET || '';
+const encodedSecret = new TextEncoder().encode(JWT_SECRET);
 
-export function signToken(payload: Record<string, unknown>): string {
-  return jwt.sign(payload, JWT_SECRET, { expiresIn: '7d' });
+export async function signToken(payload: Record<string, unknown>): Promise<string> {
+  return new SignJWT(payload as Record<string, string>)
+    .setProtectedHeader({ alg: 'HS256' })
+    .setExpirationTime('7d')
+    .setIssuedAt()
+    .sign(encodedSecret);
 }
 
-export function verifyToken(token: string): Record<string, unknown> | null {
+export async function verifyToken(token: string): Promise<Record<string, unknown> | null> {
   try {
-    return jwt.verify(token, JWT_SECRET) as Record<string, unknown>;
+    const { payload } = await jwtVerify(token, encodedSecret);
+    return payload as unknown as Record<string, unknown>;
   } catch {
     return null;
   }

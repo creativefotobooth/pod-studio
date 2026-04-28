@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 import { verifyToken } from '@/lib/auth';
 
-export function middleware(request: NextRequest) {
+export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
   
   // Allow login page, static assets, and API routes
@@ -12,7 +12,7 @@ export function middleware(request: NextRequest) {
 
   const sessionCookie = request.cookies.get('pod_studio_session')?.value;
   
-  if (!sessionCookie || !verifyToken(sessionCookie)) {
+  if (!sessionCookie || !(await verifyToken(sessionCookie))) {
     return NextResponse.redirect(new URL('/login', request.url));
   }
 

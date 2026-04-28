@@ -128,7 +128,7 @@ export default function ScoresPage() {
           
           <div className="flex items-center gap-2">
             <label className="text-sm text-muted-foreground">Filter by niche:</label>
-            <Select value={nicheFilter} onValueChange={setNicheFilter}>
+            <Select value={nicheFilter} onValueChange={(v) => v && setNicheFilter(v)}>
               <SelectTrigger className="w-[180px]">
                 <SelectValue placeholder="All niches" />
               </SelectTrigger>

@@ -144,9 +144,10 @@ export default function QueuePage() {
                         </label>
                         <Slider
                           value={[ratingValues[design.designId] || 5]}
-                          onValueChange={([v]) => 
-                            setRatingValues(prev => ({ ...prev, [design.designId]: v }))
-                          }
+                          onValueChange={(v) => {
+                            const val = Array.isArray(v) ? v[0] : v;
+                            setRatingValues(prev => ({ ...prev, [design.designId]: val }));
+                          }}
                           min={1}
                           max={10}
                           step={1}

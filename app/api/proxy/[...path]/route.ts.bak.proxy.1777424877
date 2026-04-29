@@ -1,5 +1,4 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { verifyToken } from '@/lib/auth';
 
 const VPS_API_URL = process.env.VPS_API_URL || 'http://46.225.130.78:18792';
 const AUTH_TOKEN = process.env.POD_STUDIO_AUTH_TOKEN || '';
@@ -10,12 +9,6 @@ async function proxyRequest(
   request: NextRequest,
   { params }: { params: Promise<{ path: string[] }> }
 ) {
-  // Require valid session cookie
-  const sessionCookie = request.cookies.get('pod_studio_session')?.value;
-  if (!sessionCookie || !(await verifyToken(sessionCookie))) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-  }
-
   const { path } = await params;
   const targetPath = '/api/' + path.join('/');
   const targetUrl = `${VPS_API_URL}${targetPath}`;

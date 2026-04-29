@@ -57,7 +57,7 @@ async function proxyRequest(
     // Build response headers, filtering out transfer-encoding
     const responseHeaders = new Headers();
     response.headers.forEach((value, key) => {
-      if (!['transfer-encoding', 'connection', 'keep-alive', 'content-encoding', 'content-length'].includes(key.toLowerCase())) {
+      if (!['transfer-encoding', 'connection', 'keep-alive'].includes(key.toLowerCase())) {
         responseHeaders.set(key, value);
       }
     });

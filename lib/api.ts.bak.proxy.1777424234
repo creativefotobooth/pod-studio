@@ -1,5 +1,5 @@
-// Proxy prefix — all calls go through Next.js server-side proxy to avoid mixed content
-const PROXY_PREFIX = '/api/proxy';
+const BASE_URL = process.env.NEXT_PUBLIC_BENSON_API_URL || 'http://46.225.130.78:18792';
+const AUTH_TOKEN = process.env.NEXT_PUBLIC_POD_STUDIO_AUTH_TOKEN || '';
 
 interface ApiOptions {
   method?: string;
@@ -10,10 +10,11 @@ interface ApiOptions {
 async function apiFetch<T>(endpoint: string, options: ApiOptions = {}): Promise<T> {
   const { method = 'GET', body, headers = {} } = options;
   
-  const response = await fetch(`${PROXY_PREFIX}${endpoint}`, {
+  const response = await fetch(`${BASE_URL}${endpoint}`, {
     method,
     headers: {
       'Content-Type': 'application/json',
+      'Authorization': `Bearer ${AUTH_TOKEN}`,
       ...headers,
     },
     body: body ? JSON.stringify(body) : undefined,

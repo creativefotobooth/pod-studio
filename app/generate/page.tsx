@@ -10,7 +10,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { CheckCircle2, Clock, ImageIcon, Loader2, Sparkles, ThumbsDown, ThumbsUp, XCircle } from 'lucide-react';
+import { CheckCircle2, Clock, ImageIcon, Loader2, Sparkles, Trash2, ThumbsDown, ThumbsUp, XCircle } from 'lucide-react';
 import { toast } from 'sonner';
 
 type ProductType = 'tee' | 'mug' | 'hoodie';
@@ -24,7 +24,18 @@ type ApprovedDesign = {
   approvedAt: string;
 };
 
+type CurrentJobMeta = {
+  jobId: string;
+  title: string;
+  niche: string;
+  status: JobStatus['status'];
+  startedAt: string;
+  type?: ProductType;
+  layout?: 'centered-badge';
+};
+
 const APPROVED_KEY = 'pod-studio-approved-designs';
+const CURRENT_JOB_KEY = 'pod_studio_current_job';
 
 function loadApproved(): ApprovedDesign[] {
   if (typeof window === 'undefined') return [];
@@ -39,6 +50,24 @@ function loadApproved(): ApprovedDesign[] {
 function saveApproved(items: ApprovedDesign[]) {
   window.localStorage.setItem(APPROVED_KEY, JSON.stringify(items));
   window.dispatchEvent(new Event('pod-studio-approved-updated'));
+}
+
+function loadCurrentJob(): CurrentJobMeta | null {
+  if (typeof window === 'undefined') return null;
+  try {
+    const raw = window.localStorage.getItem(CURRENT_JOB_KEY);
+    return raw ? JSON.parse(raw) : null;
+  } catch {
+    return null;
+  }
+}
+
+function saveCurrentJob(meta: CurrentJobMeta) {
+  window.localStorage.setItem(CURRENT_JOB_KEY, JSON.stringify(meta));
+}
+
+function clearCurrentJob() {
+  window.localStorage.removeItem(CURRENT_JOB_KEY);
 }
 
 export default function GeneratePage() {
@@ -61,13 +90,70 @@ export default function GeneratePage() {
   useEffect(() => {
     let cancelled = false;
 
+    async function restoreCurrentJob() {
+      const saved = loadCurrentJob();
+      if (!saved?.jobId) return;
+
+      setJobId(saved.jobId);
+      setSelectedTitle(saved.title ?? '');
+      setSelectedNiche(saved.niche ?? '');
+      if (saved.type) setProductType(saved.type);
+      setGenerating(saved.status === 'running');
+
+      setJob({
+        jobId: saved.jobId,
+        title: saved.title,
+        niche: saved.niche,
+        status: saved.status,
+        score: null,
+        error: null,
+        startedAt: saved.startedAt,
+        finishedAt: null,
+        hasComposite: false,
+        hasAi: false,
+        stdoutTail: ['Restoring saved job...'],
+      });
+
+      try {
+        const restored = await api.getJob(saved.jobId);
+        if (cancelled) return;
+        setJob(restored);
+        setGenerating(restored.status === 'running');
+        saveCurrentJob({
+          jobId: restored.jobId,
+          title: restored.title || saved.title,
+          niche: restored.niche || saved.niche,
+          status: restored.status,
+          startedAt: restored.startedAt || saved.startedAt,
+          type: saved.type,
+          layout: saved.layout ?? 'centered-badge',
+        });
+      } catch (error) {
+        if (!cancelled) {
+          toast.error(error instanceof Error ? error.message : 'Failed to restore saved job');
+          setGenerating(false);
+        }
+      }
+    }
+
+    restoreCurrentJob();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+
     async function loadTitles() {
       try {
         setLoadingTitles(true);
         const data = await api.getTitles();
         if (cancelled) return;
         setLibrary(data);
-        const firstNiche = data.niches?.[0];
+        const saved = loadCurrentJob();
+        const savedNiche = saved?.niche ? data.niches.find((item) => item.niche === saved.niche) : null;
+        const firstNiche = savedNiche ?? data.niches?.[0];
         setSelectedNiche(firstNiche?.niche ?? '');
         setSelectedSubNiche(firstNiche?.subNiches?.[0]?.subNiche ?? '');
       } catch (error) {
@@ -107,6 +193,15 @@ export default function GeneratePage() {
         const nextJob = await api.getJob(jobId);
         if (cancelled) return;
         setJob(nextJob);
+        saveCurrentJob({
+          jobId: nextJob.jobId,
+          title: nextJob.title || activeTitle,
+          niche: nextJob.niche || selectedNiche,
+          status: nextJob.status,
+          startedAt: nextJob.startedAt,
+          type: productType,
+          layout,
+        });
         if (nextJob.status === 'done') {
           setGenerating(false);
           toast.success('Generation complete');
@@ -128,7 +223,7 @@ export default function GeneratePage() {
       cancelled = true;
       window.clearInterval(id);
     };
-  }, [jobId, job?.status]);
+  }, [jobId, job?.status, activeTitle, selectedNiche, productType, layout]);
 
   function handleNicheChange(value: string | null) {
     if (!value) return;
@@ -159,6 +254,15 @@ export default function GeneratePage() {
         critic: true,
       });
       setJobId(response.jobId);
+      saveCurrentJob({
+        jobId: response.jobId,
+        title: activeTitle,
+        niche: selectedNiche,
+        status: response.status,
+        startedAt: response.startedAt,
+        type: productType,
+        layout,
+      });
       setJob({
         jobId: response.jobId,
         title: activeTitle,
@@ -193,15 +297,28 @@ export default function GeneratePage() {
     const next = [nextItem, ...approved.filter((item) => item.jobId !== job.jobId)];
     setApproved(next);
     saveApproved(next);
+    clearCurrentJob();
+    setJob(null);
+    setJobId(null);
+    setGenerating(false);
     toast.success('Approved locally — Printify publish comes in Phase 3');
   }
 
   function rejectCurrent() {
     if (!job) return;
     toast.message('Rejected for now — nothing was published');
+    clearCurrentJob();
     setJob(null);
     setJobId(null);
     setGenerating(false);
+  }
+
+  function discardCurrent() {
+    clearCurrentJob();
+    setJob(null);
+    setJobId(null);
+    setGenerating(false);
+    toast.message('Cleared current job from this browser');
   }
 
   return (
@@ -367,9 +484,14 @@ export default function GeneratePage() {
                       </CardTitle>
                       <CardDescription>{job.title}</CardDescription>
                     </div>
-                    <Badge variant={job.status === 'done' ? 'default' : job.status === 'failed' ? 'destructive' : 'secondary'}>
-                      {job.status}
-                    </Badge>
+                    <div className="flex items-center gap-2">
+                      <Badge variant={job.status === 'done' ? 'default' : job.status === 'failed' ? 'destructive' : 'secondary'}>
+                        {job.status}
+                      </Badge>
+                      <Button variant="ghost" size="sm" onClick={discardCurrent}>
+                        <Trash2 className="mr-2 h-4 w-4" /> Discard
+                      </Button>
+                    </div>
                   </div>
                 </CardHeader>
                 <CardContent className="space-y-4">

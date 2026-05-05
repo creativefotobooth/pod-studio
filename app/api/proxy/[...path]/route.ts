@@ -64,9 +64,14 @@ async function proxyRequest(
       }
     });
 
-    const responseBody = await response.text();
+    const responseContentType = response.headers.get('content-type') || '';
+    const isBinary = !responseContentType.includes('json') && !responseContentType.includes('text');
 
-    return new NextResponse(responseBody, {
+    const responseBody = isBinary
+      ? await response.arrayBuffer()
+      : await response.text();
+
+    return new NextResponse(responseBody as BodyInit, {
       status: response.status,
       statusText: response.statusText,
       headers: responseHeaders,

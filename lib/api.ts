@@ -9,7 +9,7 @@ interface ApiOptions {
 
 async function apiFetch<T>(endpoint: string, options: ApiOptions = {}): Promise<T> {
   const { method = 'GET', body, headers = {} } = options;
-  
+
   const response = await fetch(`${PROXY_PREFIX}${endpoint}`, {
     method,
     headers: {
@@ -25,6 +25,16 @@ async function apiFetch<T>(endpoint: string, options: ApiOptions = {}): Promise<
   }
 
   return response.json();
+}
+
+async function apiFetchBlob(endpoint: string): Promise<Blob> {
+  const response = await fetch(`${PROXY_PREFIX}${endpoint}`, {
+    method: 'GET',
+  });
+  if (!response.ok) {
+    throw new Error(`HTTP ${response.status}`);
+  }
+  return response.blob();
 }
 
 // --- Typed API functions ---
@@ -75,11 +85,48 @@ export interface RatingEntry {
   timestamp: string;
 }
 
+export interface TitleLibraryResponse {
+  niches: Array<{
+    niche: string;
+    subNiches: Array<{
+      subNiche: string;
+      count: number;
+      candidates: string[];
+      model: string;
+      generatedAt: string;
+    }>;
+  }>;
+}
+
 export interface GenerateRequest {
+  title: string;
   niche: string;
-  quantity: number;
-  layout: string;
-  productType: string;
+  type: 'tee' | 'mug' | 'hoodie';
+  layout: 'centered-badge';
+  critic: boolean;
+}
+
+export interface GenerateResponse {
+  jobId: string;
+  status: 'running' | 'done' | 'failed';
+  startedAt: string;
+}
+
+export interface JobStatus {
+  jobId: string;
+  title: string;
+  niche: string;
+  status: 'running' | 'done' | 'failed';
+  score: null | {
+    verdict: 'PASS' | 'FAIL';
+    total: number;
+  };
+  error: string | null;
+  startedAt: string;
+  finishedAt: string | null;
+  hasComposite: boolean;
+  hasAi: boolean;
+  stdoutTail: string[];
 }
 
 export interface GeneratedDesign {
@@ -102,8 +149,14 @@ export const api = {
   getRatings: () => apiFetch<RatingEntry[]>('/api/ratings'),
   postRating: (data: { designId: string; score: number; notes?: string }) =>
     apiFetch<{ ok: boolean }>('/api/ratings', { method: 'POST', body: data }),
+
+  // --- Phase 2 generation APIs ---
+  getTitles: () => apiFetch<TitleLibraryResponse>('/api/titles'),
   generate: (data: GenerateRequest) =>
-    apiFetch<GeneratedDesign[]>('/api/generate', { method: 'POST', body: data }),
+    apiFetch<GenerateResponse>('/api/generate', { method: 'POST', body: data }),
+  getJob: (jobId: string) => apiFetch<JobStatus>(`/api/generate/${jobId}`),
+  getJobImage: (jobId: string, type: 'composite' | 'ai') =>
+    apiFetchBlob(`/api/generate/${jobId}/image?type=${type}`),
   publish: (data: unknown) =>
     apiFetch<{ ok: boolean; mocked: boolean }>('/api/publish', { method: 'POST', body: data }),
 };

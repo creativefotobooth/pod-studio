@@ -21,7 +21,21 @@ async function apiFetch<T>(endpoint: string, options: ApiOptions = {}): Promise<
 
   if (!response.ok) {
     const error = await response.json().catch(() => ({ error: 'Unknown error' }));
-    throw new Error(error.error || `HTTP ${response.status}`);
+    throw new Error(error.error || error.detail || `HTTP ${response.status}`);
+  }
+
+  return response.json();
+}
+
+async function apiFetchFormData<T>(endpoint: string, formData: FormData): Promise<T> {
+  const response = await fetch(`${PROXY_PREFIX}${endpoint}`, {
+    method: 'POST',
+    body: formData,
+  });
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ error: 'Unknown error' }));
+    throw new Error(error.error || error.detail || `HTTP ${response.status}`);
   }
 
   return response.json();
@@ -98,11 +112,15 @@ export interface TitleLibraryResponse {
   }>;
 }
 
+export type ProductType = 'tee' | 'mug';
+export type DesignMode = 'artwork-only' | 'combined';
+
 export interface GenerateRequest {
   title: string;
   niche: string;
-  type: 'tee' | 'mug' | 'hoodie';
+  type: ProductType;
   layout: 'centered-badge';
+  mode: DesignMode;
   critic: boolean;
 }
 
@@ -116,6 +134,7 @@ export interface JobStatus {
   jobId: string;
   title: string;
   niche: string;
+  mode?: DesignMode | 'text-only';
   status: 'running' | 'done' | 'failed';
   score: null | {
     verdict: 'PASS' | 'FAIL';
@@ -140,6 +159,43 @@ export interface GeneratedDesign {
   createdAt: string;
 }
 
+export interface PublishRequest {
+  jobId: string;
+  productType: ProductType;
+  title: string;
+  niche: string;
+  subNiche: string;
+  priceGbp: number;
+  channels: Array<'shopify' | 'etsy'>;
+}
+
+export interface PublishResponse {
+  ok: boolean;
+  partial: boolean;
+  title: string;
+  productType: string;
+  priceGbp: number;
+  publishedAt: string;
+  channels: string[];
+  results: Record<string, {
+    ok: boolean;
+    printifyProductId?: string;
+    shopId?: number;
+    error?: string;
+    warning?: string;
+    detail?: string;
+  }>;
+}
+
+export interface UploadDesignResponse {
+  jobId: string;
+  title: string;
+  niche: string;
+  subNiche?: string;
+  status: 'done';
+  uploadedAt: string;
+}
+
 export const api = {
   health: () => apiFetch<{ ok: boolean; version: string; uptime: number }>('/health'),
   getProducts: () => apiFetch<Product[]>('/api/products'),
@@ -150,13 +206,15 @@ export const api = {
   postRating: (data: { designId: string; score: number; notes?: string }) =>
     apiFetch<{ ok: boolean }>('/api/ratings', { method: 'POST', body: data }),
 
-  // --- Phase 2 generation APIs ---
+  // --- Phase 3 generation/publishing APIs ---
   getTitles: () => apiFetch<TitleLibraryResponse>('/api/titles'),
   generate: (data: GenerateRequest) =>
     apiFetch<GenerateResponse>('/api/generate', { method: 'POST', body: data }),
   getJob: (jobId: string) => apiFetch<JobStatus>(`/api/generate/${jobId}`),
   getJobImage: (jobId: string, type: 'composite' | 'ai') =>
     apiFetchBlob(`/api/generate/${jobId}/image?type=${type}`),
-  publish: (data: unknown) =>
-    apiFetch<{ ok: boolean; mocked: boolean }>('/api/publish', { method: 'POST', body: data }),
+  publish: (req: PublishRequest | { designId: string }) =>
+    apiFetch<PublishResponse>('/api/publish', { method: 'POST', body: req }),
+  uploadDesign: (formData: FormData) =>
+    apiFetchFormData<UploadDesignResponse>('/api/upload-design', formData),
 };

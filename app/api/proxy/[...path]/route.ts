@@ -24,20 +24,22 @@ async function proxyRequest(
 
   const method = request.method;
 
-  // Build headers: forward Content-Type, add auth
+  // Build headers: add auth. For multipart/form-data, do NOT set Content-Type;
+  // fetch will add the reconstructed boundary automatically.
   const headers: Record<string, string> = {
     'Authorization': `Bearer ${AUTH_TOKEN}`,
   };
 
-  const contentType = request.headers.get('content-type');
-  if (contentType) {
+  const contentType = request.headers.get('content-type') || '';
+  const isMultipart = contentType.toLowerCase().includes('multipart/form-data');
+  if (contentType && !isMultipart) {
     headers['Content-Type'] = contentType;
   }
 
   let body: BodyInit | undefined;
   if (method !== 'GET' && method !== 'HEAD') {
     try {
-      body = await request.text();
+      body = isMultipart ? await request.formData() : await request.text();
     } catch {
       body = undefined;
     }

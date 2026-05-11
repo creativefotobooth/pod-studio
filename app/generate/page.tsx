@@ -1,27 +1,29 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { ChangeEvent, useEffect, useMemo, useState } from 'react';
 import { Header } from '@/components/Header';
-import { api, type JobStatus, type TitleLibraryResponse } from '@/lib/api';
+import { api, type DesignMode, type JobStatus, type ProductType, type PublishResponse, type TitleLibraryResponse } from '@/lib/api';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { CheckCircle2, Clock, ImageIcon, Loader2, Sparkles, Trash2, ThumbsDown, ThumbsUp, XCircle } from 'lucide-react';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { CheckCircle2, Clock, ImageIcon, Loader2, Sparkles, Trash2, ThumbsDown, ThumbsUp, Upload, X, XCircle } from 'lucide-react';
 import { toast } from 'sonner';
 
-type ProductType = 'tee' | 'mug' | 'hoodie';
 type ApprovedDesign = {
   jobId: string;
   title: string;
   niche: string;
+  subNiche?: string;
   type: ProductType;
   layout: 'centered-badge';
+  mode?: DesignMode;
   score: JobStatus['score'];
   approvedAt: string;
+  source?: 'generate' | 'upload';
 };
 
 type CurrentJobMeta = {
@@ -32,19 +34,36 @@ type CurrentJobMeta = {
   startedAt: string;
   type?: ProductType;
   layout?: 'centered-badge';
+  mode?: DesignMode;
 };
+
+type PublishedInfo = {
+  publishedChannels: string[];
+  printifyIds: Record<string, string>;
+  publishedAt: string;
+  partial?: boolean;
+};
+
+type PublishTarget = ApprovedDesign | null;
+
+type UploadMode = 'finished' | 'reference';
 
 const APPROVED_KEY = 'pod-studio-approved-designs';
 const CURRENT_JOB_KEY = 'pod_studio_current_job';
+const PUBLISHED_KEY = 'pod-studio-published-designs';
+
+function readJson<T>(key: string, fallback: T): T {
+  if (typeof window === 'undefined') return fallback;
+  try {
+    const raw = window.localStorage.getItem(key);
+    return raw ? JSON.parse(raw) : fallback;
+  } catch {
+    return fallback;
+  }
+}
 
 function loadApproved(): ApprovedDesign[] {
-  if (typeof window === 'undefined') return [];
-  try {
-    const raw = window.localStorage.getItem(APPROVED_KEY);
-    return raw ? JSON.parse(raw) : [];
-  } catch {
-    return [];
-  }
+  return readJson<ApprovedDesign[]>(APPROVED_KEY, []);
 }
 
 function saveApproved(items: ApprovedDesign[]) {
@@ -52,14 +71,16 @@ function saveApproved(items: ApprovedDesign[]) {
   window.dispatchEvent(new Event('pod-studio-approved-updated'));
 }
 
+function loadPublished(): Record<string, PublishedInfo> {
+  return readJson<Record<string, PublishedInfo>>(PUBLISHED_KEY, {});
+}
+
+function savePublished(items: Record<string, PublishedInfo>) {
+  window.localStorage.setItem(PUBLISHED_KEY, JSON.stringify(items));
+}
+
 function loadCurrentJob(): CurrentJobMeta | null {
-  if (typeof window === 'undefined') return null;
-  try {
-    const raw = window.localStorage.getItem(CURRENT_JOB_KEY);
-    return raw ? JSON.parse(raw) : null;
-  } catch {
-    return null;
-  }
+  return readJson<CurrentJobMeta | null>(CURRENT_JOB_KEY, null);
 }
 
 function saveCurrentJob(meta: CurrentJobMeta) {
@@ -68,6 +89,24 @@ function saveCurrentJob(meta: CurrentJobMeta) {
 
 function clearCurrentJob() {
   window.localStorage.removeItem(CURRENT_JOB_KEY);
+}
+
+function formatChannel(channel: string) {
+  return channel.charAt(0).toUpperCase() + channel.slice(1);
+}
+
+function successfulChannels(response: PublishResponse) {
+  return Object.entries(response.results)
+    .filter(([, result]) => result.ok)
+    .map(([channel]) => channel);
+}
+
+function printifyIds(response: PublishResponse) {
+  return Object.fromEntries(
+    Object.entries(response.results)
+      .filter(([, result]) => result.printifyProductId)
+      .map(([channel, result]) => [channel, result.printifyProductId as string])
+  );
 }
 
 export default function GeneratePage() {
@@ -80,12 +119,29 @@ export default function GeneratePage() {
   const [selectedTitle, setSelectedTitle] = useState('');
   const [customTitle, setCustomTitle] = useState('');
   const [productType, setProductType] = useState<ProductType>('tee');
+  const [designMode, setDesignMode] = useState<DesignMode>('artwork-only');
   const [layout] = useState<'centered-badge'>('centered-badge');
 
   const [generating, setGenerating] = useState(false);
   const [jobId, setJobId] = useState<string | null>(null);
   const [job, setJob] = useState<JobStatus | null>(null);
   const [approved, setApproved] = useState<ApprovedDesign[]>(() => loadApproved());
+  const [published, setPublished] = useState<Record<string, PublishedInfo>>(() => loadPublished());
+  const [hidePublished, setHidePublished] = useState(false);
+
+  const [publishTarget, setPublishTarget] = useState<PublishTarget>(null);
+  const [publishChannels, setPublishChannels] = useState<Array<'shopify' | 'etsy'>>(['shopify', 'etsy']);
+  const [publishPrice, setPublishPrice] = useState('19.99');
+  const [publishing, setPublishing] = useState(false);
+
+  const [uploadMode, setUploadMode] = useState<UploadMode>('finished');
+  const [uploadFile, setUploadFile] = useState<File | null>(null);
+  const [uploadPreview, setUploadPreview] = useState<string | null>(null);
+  const [uploadTitle, setUploadTitle] = useState('');
+  const [uploadNiche, setUploadNiche] = useState('');
+  const [uploadSubNiche, setUploadSubNiche] = useState('');
+  const [uploading, setUploading] = useState(false);
+  const [referenceStrength, setReferenceStrength] = useState(50);
 
   useEffect(() => {
     let cancelled = false;
@@ -98,12 +154,14 @@ export default function GeneratePage() {
       setSelectedTitle(saved.title ?? '');
       setSelectedNiche(saved.niche ?? '');
       if (saved.type) setProductType(saved.type);
+      if (saved.mode) setDesignMode(saved.mode);
       setGenerating(saved.status === 'running');
 
       setJob({
         jobId: saved.jobId,
         title: saved.title,
         niche: saved.niche,
+        mode: saved.mode,
         status: saved.status,
         score: null,
         error: null,
@@ -127,6 +185,7 @@ export default function GeneratePage() {
           startedAt: restored.startedAt || saved.startedAt,
           type: saved.type,
           layout: saved.layout ?? 'centered-badge',
+          mode: (restored.mode as DesignMode) || saved.mode,
         });
       } catch (error) {
         if (!cancelled) {
@@ -154,8 +213,11 @@ export default function GeneratePage() {
         const saved = loadCurrentJob();
         const savedNiche = saved?.niche ? data.niches.find((item) => item.niche === saved.niche) : null;
         const firstNiche = savedNiche ?? data.niches?.[0];
+        const firstSub = firstNiche?.subNiches?.[0];
         setSelectedNiche(firstNiche?.niche ?? '');
-        setSelectedSubNiche(firstNiche?.subNiches?.[0]?.subNiche ?? '');
+        setSelectedSubNiche(firstSub?.subNiche ?? '');
+        setUploadNiche(firstNiche?.niche ?? '');
+        setUploadSubNiche(firstSub?.subNiche ?? '');
       } catch (error) {
         if (cancelled) return;
         const message = error instanceof Error ? error.message : 'Failed to load title library';
@@ -172,17 +234,31 @@ export default function GeneratePage() {
     };
   }, []);
 
+  useEffect(() => {
+    if (!uploadFile) {
+      setUploadPreview(null);
+      return;
+    }
+    const url = URL.createObjectURL(uploadFile);
+    setUploadPreview(url);
+    return () => URL.revokeObjectURL(url);
+  }, [uploadFile]);
+
   const niches = library?.niches ?? [];
   const currentNiche = niches.find((item) => item.niche === selectedNiche);
   const subNiches = currentNiche?.subNiches ?? [];
   const currentSubNiche = subNiches.find((item) => item.subNiche === selectedSubNiche);
   const titleCandidates = currentSubNiche?.candidates ?? [];
 
-  const activeTitle = useMemo(() => {
-    return (customTitle.trim() || selectedTitle.trim()).trim();
-  }, [customTitle, selectedTitle]);
+  const uploadNicheEntry = niches.find((item) => item.niche === uploadNiche);
+  const uploadSubNiches = uploadNicheEntry?.subNiches ?? [];
 
+  const activeTitle = useMemo(() => (customTitle.trim() || selectedTitle.trim()).trim(), [customTitle, selectedTitle]);
   const canGenerate = Boolean(activeTitle && selectedNiche && !generating && job?.status !== 'running');
+  const publishPriceNumber = Number(publishPrice);
+  const publishPriceError = publishPrice.trim() && publishPriceNumber > 0 ? '' : 'Enter a price greater than £0.';
+  const canConfirmPublish = Boolean(publishTarget && publishChannels.length > 0 && !publishPriceError && !publishing);
+  const visibleApproved = hidePublished ? approved.filter((item) => !published[item.jobId]) : approved;
 
   useEffect(() => {
     if (!jobId || job?.status === 'done' || job?.status === 'failed') return;
@@ -201,6 +277,7 @@ export default function GeneratePage() {
           startedAt: nextJob.startedAt,
           type: productType,
           layout,
+          mode: (nextJob.mode as DesignMode) || designMode,
         });
         if (nextJob.status === 'done') {
           setGenerating(false);
@@ -211,9 +288,7 @@ export default function GeneratePage() {
           toast.error(nextJob.error || 'Generation failed');
         }
       } catch (error) {
-        if (!cancelled) {
-          toast.error(error instanceof Error ? error.message : 'Failed to poll generation job');
-        }
+        if (!cancelled) toast.error(error instanceof Error ? error.message : 'Failed to poll generation job');
       }
     };
 
@@ -223,7 +298,7 @@ export default function GeneratePage() {
       cancelled = true;
       window.clearInterval(id);
     };
-  }, [jobId, job?.status, activeTitle, selectedNiche, productType, layout]);
+  }, [jobId, job?.status, activeTitle, selectedNiche, productType, layout, designMode]);
 
   function handleNicheChange(value: string | null) {
     if (!value) return;
@@ -232,6 +307,13 @@ export default function GeneratePage() {
     setSelectedSubNiche(next?.subNiches?.[0]?.subNiche ?? '');
     setSelectedTitle('');
     setCustomTitle('');
+  }
+
+  function handleUploadNicheChange(value: string | null) {
+    if (!value) return;
+    setUploadNiche(value);
+    const next = niches.find((item) => item.niche === value);
+    setUploadSubNiche(next?.subNiches?.[0]?.subNiche ?? '');
   }
 
   function handleSubNicheChange(value: string | null) {
@@ -251,7 +333,8 @@ export default function GeneratePage() {
         niche: selectedNiche,
         type: productType,
         layout,
-        critic: true,
+        mode: designMode,
+        critic: false,
       });
       setJobId(response.jobId);
       saveCurrentJob({
@@ -262,11 +345,13 @@ export default function GeneratePage() {
         startedAt: response.startedAt,
         type: productType,
         layout,
+        mode: designMode,
       });
       setJob({
         jobId: response.jobId,
         title: activeTitle,
         niche: selectedNiche,
+        mode: designMode,
         status: response.status,
         score: null,
         error: null,
@@ -289,10 +374,13 @@ export default function GeneratePage() {
       jobId: job.jobId,
       title: job.title || activeTitle,
       niche: job.niche || selectedNiche,
+      subNiche: selectedSubNiche,
       type: productType,
       layout,
+      mode: (job.mode as DesignMode) || designMode,
       score: job.score,
       approvedAt: new Date().toISOString(),
+      source: 'generate',
     };
     const next = [nextItem, ...approved.filter((item) => item.jobId !== job.jobId)];
     setApproved(next);
@@ -301,7 +389,7 @@ export default function GeneratePage() {
     setJob(null);
     setJobId(null);
     setGenerating(false);
-    toast.success('Approved locally — Printify publish comes in Phase 3');
+    toast.success('Approved — ready to publish');
   }
 
   function rejectCurrent() {
@@ -321,6 +409,124 @@ export default function GeneratePage() {
     toast.message('Cleared current job from this browser');
   }
 
+  function chooseUploadFile(event: ChangeEvent<HTMLInputElement>, mode: UploadMode) {
+    const file = event.target.files?.[0] ?? null;
+    if (!file) {
+      setUploadFile(null);
+      return;
+    }
+    const maxMb = mode === 'finished' ? 25 : 10;
+    const okType = mode === 'finished' ? file.type === 'image/png' : ['image/png', 'image/jpeg'].includes(file.type);
+    if (!okType) {
+      toast.error(mode === 'finished' ? 'Upload finished design requires a PNG file.' : 'Reference image must be PNG or JPG.');
+      event.target.value = '';
+      return;
+    }
+    if (file.size > maxMb * 1024 * 1024) {
+      toast.error(`File must be ${maxMb}MB or smaller.`);
+      event.target.value = '';
+      return;
+    }
+    setUploadFile(file);
+  }
+
+  async function handleUploadFinished() {
+    if (!uploadFile || !uploadTitle.trim() || !uploadNiche) {
+      toast.error('Choose a PNG, title, and niche first.');
+      return;
+    }
+    if (uploadFile.size > 25 * 1024 * 1024 || uploadFile.type !== 'image/png') {
+      toast.error('Finished design must be a PNG under 25MB.');
+      return;
+    }
+    try {
+      setUploading(true);
+      const form = new FormData();
+      form.append('file', uploadFile);
+      form.append('title', uploadTitle.trim());
+      form.append('niche', uploadNiche);
+      form.append('subNiche', uploadSubNiche || '');
+      const response = await api.uploadDesign(form);
+      const nextItem: ApprovedDesign = {
+        jobId: response.jobId,
+        title: response.title,
+        niche: response.niche,
+        subNiche: response.subNiche,
+        type: 'tee',
+        layout,
+        mode: 'artwork-only',
+        score: null,
+        approvedAt: response.uploadedAt,
+        source: 'upload',
+      };
+      const next = [nextItem, ...approved.filter((item) => item.jobId !== response.jobId)];
+      setApproved(next);
+      saveApproved(next);
+      setUploadFile(null);
+      setUploadTitle('');
+      toast.success('Uploaded design added to Approved queue');
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Upload failed');
+    } finally {
+      setUploading(false);
+    }
+  }
+
+  function handleReferenceSubmit() {
+    toast.message('Reference-image generation coming soon — backend not yet implemented');
+  }
+
+  function openPublish(item: ApprovedDesign) {
+    setPublishTarget(item);
+    setPublishChannels(['shopify', 'etsy']);
+    setPublishPrice('19.99');
+  }
+
+  async function handlePublish() {
+    if (!publishTarget || !canConfirmPublish) return;
+    try {
+      setPublishing(true);
+      const response = await api.publish({
+        jobId: publishTarget.jobId,
+        productType: publishTarget.type,
+        title: publishTarget.title,
+        niche: publishTarget.niche,
+        subNiche: publishTarget.subNiche || '',
+        priceGbp: publishPriceNumber,
+        channels: publishChannels,
+      });
+      const channels = successfulChannels(response);
+      if (channels.length === 0) {
+        toast.error('Publish failed for all channels');
+        return;
+      }
+      const nextPublished = {
+        ...published,
+        [publishTarget.jobId]: {
+          publishedChannels: channels,
+          printifyIds: printifyIds(response),
+          publishedAt: response.publishedAt,
+          partial: response.partial,
+        },
+      };
+      setPublished(nextPublished);
+      savePublished(nextPublished);
+      setPublishTarget(null);
+      const ids = Object.values(printifyIds(response)).join(', ');
+      toast.success(`Published to ${channels.map(formatChannel).join('+')}${ids ? ` — Printify ID(s): ${ids}` : ''}`);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Publish failed');
+    } finally {
+      setPublishing(false);
+    }
+  }
+
+  function togglePublishChannel(channel: 'shopify' | 'etsy') {
+    setPublishChannels((current) =>
+      current.includes(channel) ? current.filter((item) => item !== channel) : [...current, channel]
+    );
+  }
+
   return (
     <div className="min-h-screen bg-background">
       <Header />
@@ -333,7 +539,7 @@ export default function GeneratePage() {
               <h1 className="text-3xl font-bold tracking-tight">Generate Design</h1>
             </div>
             <p className="mt-1 text-muted-foreground">
-              Browse the title library, generate one design at a time, and approve winners into a local queue.
+              Generate artwork, upload finished PNGs, approve winners, and publish to Printify.
             </p>
           </div>
           <Badge variant="secondary" className="w-fit text-sm">
@@ -444,12 +650,24 @@ export default function GeneratePage() {
                 <div className="space-y-2">
                   <Label>Product type</Label>
                   <Tabs value={productType} onValueChange={(value) => value && setProductType(value as ProductType)}>
-                    <TabsList className="grid w-full grid-cols-3">
+                    <TabsList className="grid w-full grid-cols-2">
                       <TabsTrigger value="tee">Tee</TabsTrigger>
                       <TabsTrigger value="mug">Mug</TabsTrigger>
-                      <TabsTrigger value="hoodie">Hoodie</TabsTrigger>
                     </TabsList>
                   </Tabs>
+                </div>
+
+                <div className="space-y-2">
+                  <Label>Design mode</Label>
+                  <Tabs value={designMode} onValueChange={(value) => value && setDesignMode(value as DesignMode)}>
+                    <TabsList className="grid w-full grid-cols-2">
+                      <TabsTrigger value="artwork-only">Artwork only</TabsTrigger>
+                      <TabsTrigger value="combined">Artwork + text</TabsTrigger>
+                    </TabsList>
+                  </Tabs>
+                  <p className="text-xs text-muted-foreground">
+                    Artwork only is the default. Artwork + text composites the title below the artwork.
+                  </p>
                 </div>
 
                 <div className="space-y-2">
@@ -549,29 +767,220 @@ export default function GeneratePage() {
           </div>
         </div>
 
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2"><Upload className="h-5 w-5" /> Upload Your Own</CardTitle>
+            <CardDescription>Add finished PNGs directly to the approved queue, or preview the future reference-image flow.</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <Tabs value={uploadMode} onValueChange={(value) => {
+              setUploadMode(value as UploadMode);
+              setUploadFile(null);
+            }}>
+              <TabsList className="grid w-full max-w-xl grid-cols-2">
+                <TabsTrigger value="finished">Upload finished design</TabsTrigger>
+                <TabsTrigger value="reference">Generate from reference</TabsTrigger>
+              </TabsList>
+
+              <TabsContent value="finished" className="mt-5 space-y-4">
+                <div className="grid gap-4 lg:grid-cols-[1fr_280px]">
+                  <div className="space-y-4">
+                    <div className="space-y-2">
+                      <Label>PNG file (max 25MB)</Label>
+                      <Input type="file" accept="image/png,.png" onChange={(event) => chooseUploadFile(event, 'finished')} />
+                    </div>
+                    <div className="grid gap-3 md:grid-cols-3">
+                      <div className="space-y-2">
+                        <Label>Title</Label>
+                        <Input value={uploadTitle} onChange={(event) => setUploadTitle(event.target.value)} placeholder="Design title" />
+                      </div>
+                      <div className="space-y-2">
+                        <Label>Niche</Label>
+                        <Select value={uploadNiche} onValueChange={handleUploadNicheChange} disabled={loadingTitles || niches.length === 0}>
+                          <SelectTrigger><SelectValue placeholder="Select niche" /></SelectTrigger>
+                          <SelectContent>
+                            {niches.map((item) => <SelectItem key={item.niche} value={item.niche}>{item.niche}</SelectItem>)}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <div className="space-y-2">
+                        <Label>Sub-niche</Label>
+                        <Select value={uploadSubNiche} onValueChange={(value) => value && setUploadSubNiche(value)} disabled={uploadSubNiches.length === 0}>
+                          <SelectTrigger><SelectValue placeholder="Select sub-niche" /></SelectTrigger>
+                          <SelectContent>
+                            {uploadSubNiches.map((item) => <SelectItem key={item.subNiche} value={item.subNiche}>{item.subNiche}</SelectItem>)}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    </div>
+                    <Button onClick={handleUploadFinished} disabled={uploading || !uploadFile || !uploadTitle.trim() || !uploadNiche}>
+                      {uploading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Upload className="mr-2 h-4 w-4" />}
+                      Add to Approved Queue
+                    </Button>
+                  </div>
+                  <div className="flex min-h-48 items-center justify-center overflow-hidden rounded-xl border bg-muted/40">
+                    {uploadPreview ? (
+                      <img src={uploadPreview} alt="Upload preview" className="max-h-72 w-full object-contain p-3" />
+                    ) : (
+                      <div className="p-6 text-center text-sm text-muted-foreground">PNG preview appears here</div>
+                    )}
+                  </div>
+                </div>
+              </TabsContent>
+
+              <TabsContent value="reference" className="mt-5 space-y-4">
+                <div className="grid gap-4 lg:grid-cols-[1fr_280px]">
+                  <div className="space-y-4">
+                    <div className="space-y-2">
+                      <Label>Reference image (PNG/JPG, max 10MB)</Label>
+                      <Input type="file" accept="image/png,image/jpeg,.png,.jpg,.jpeg" onChange={(event) => chooseUploadFile(event, 'reference')} />
+                    </div>
+                    <div className="grid gap-3 md:grid-cols-3">
+                      <div className="space-y-2">
+                        <Label>Title</Label>
+                        <Input value={uploadTitle} onChange={(event) => setUploadTitle(event.target.value)} placeholder="Design title" />
+                      </div>
+                      <div className="space-y-2">
+                        <Label>Niche</Label>
+                        <Select value={uploadNiche} onValueChange={handleUploadNicheChange} disabled={loadingTitles || niches.length === 0}>
+                          <SelectTrigger><SelectValue placeholder="Select niche" /></SelectTrigger>
+                          <SelectContent>
+                            {niches.map((item) => <SelectItem key={item.niche} value={item.niche}>{item.niche}</SelectItem>)}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <div className="space-y-2">
+                        <Label>Sub-niche</Label>
+                        <Select value={uploadSubNiche} onValueChange={(value) => value && setUploadSubNiche(value)} disabled={uploadSubNiches.length === 0}>
+                          <SelectTrigger><SelectValue placeholder="Select sub-niche" /></SelectTrigger>
+                          <SelectContent>
+                            {uploadSubNiches.map((item) => <SelectItem key={item.subNiche} value={item.subNiche}>{item.subNiche}</SelectItem>)}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    </div>
+                    <div className="space-y-2">
+                      <Label>Reference strength: {referenceStrength}</Label>
+                      <Input type="range" min="0" max="100" value={referenceStrength} onChange={(event) => setReferenceStrength(Number(event.target.value))} />
+                    </div>
+                    <Button onClick={handleReferenceSubmit} disabled={!uploadFile || !uploadTitle.trim() || !uploadNiche}>
+                      Generate from reference
+                    </Button>
+                  </div>
+                  <div className="flex min-h-48 items-center justify-center overflow-hidden rounded-xl border bg-muted/40">
+                    {uploadPreview ? (
+                      <img src={uploadPreview} alt="Reference preview" className="max-h-72 w-full object-contain p-3" />
+                    ) : (
+                      <div className="p-6 text-center text-sm text-muted-foreground">Reference preview appears here</div>
+                    )}
+                  </div>
+                </div>
+              </TabsContent>
+            </Tabs>
+          </CardContent>
+        </Card>
+
         {approved.length > 0 && (
           <Card>
             <CardHeader>
-              <CardTitle>Approved queue</CardTitle>
-              <CardDescription>Saved to localStorage for now. Phase 3 will wire Printify publishing.</CardDescription>
+              <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                <div>
+                  <CardTitle>Approved queue</CardTitle>
+                  <CardDescription>Publish approved generated or uploaded designs to Printify channels.</CardDescription>
+                </div>
+                <label className="flex items-center gap-2 text-sm">
+                  <input type="checkbox" checked={hidePublished} onChange={(event) => setHidePublished(event.target.checked)} />
+                  Hide published
+                </label>
+              </div>
             </CardHeader>
             <CardContent>
               <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-3">
-                {approved.map((item) => (
-                  <div key={item.jobId} className="rounded-lg border p-3">
-                    <div className="font-medium">{item.title}</div>
-                    <div className="mt-2 flex flex-wrap gap-2">
-                      <Badge variant="secondary">{item.niche}</Badge>
-                      <Badge variant="outline">{item.type}</Badge>
-                      {item.score && <Badge>{item.score.total}/35</Badge>}
+                {visibleApproved.map((item) => {
+                  const pub = published[item.jobId];
+                  return (
+                    <div key={item.jobId} className={`rounded-lg border p-3 ${pub ? 'border-green-500/60 bg-green-500/5' : ''}`}>
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="font-medium">{item.title}</div>
+                        {pub && <Badge className="bg-green-600">Published ✓</Badge>}
+                      </div>
+                      <div className="mt-2 overflow-hidden rounded-md border bg-muted">
+                        <img src={`/api/proxy/api/generate/${item.jobId}/image?type=composite`} alt={item.title} className="h-36 w-full object-contain" />
+                      </div>
+                      <div className="mt-3 flex flex-wrap gap-2">
+                        <Badge variant="secondary">{item.niche}</Badge>
+                        <Badge variant="outline">{item.type}</Badge>
+                        <Badge variant="outline">{item.source === 'upload' ? 'uploaded' : item.mode || 'generated'}</Badge>
+                        {item.score && <Badge>{item.score.total}/35</Badge>}
+                      </div>
+                      {pub ? (
+                        <div className="mt-3 rounded-md bg-green-500/10 p-2 text-xs text-green-700 dark:text-green-300">
+                          {pub.partial ? 'Published partial' : 'Published'}: {pub.publishedChannels.map(formatChannel).join('+')}
+                          {Object.values(pub.printifyIds).length > 0 && (
+                            <div className="mt-1">Printify ID(s): {Object.values(pub.printifyIds).join(', ')}</div>
+                          )}
+                        </div>
+                      ) : (
+                        <Button className="mt-3 w-full" onClick={() => openPublish(item)}>
+                          Publish to Printify
+                        </Button>
+                      )}
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
+              {visibleApproved.length === 0 && (
+                <div className="rounded-lg border p-6 text-center text-sm text-muted-foreground">All published items are hidden.</div>
+              )}
             </CardContent>
           </Card>
         )}
       </main>
+
+      {publishTarget && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
+          <div className="w-full max-w-md rounded-xl border bg-background p-6 shadow-xl">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <h2 className="text-xl font-semibold">Publish to Printify</h2>
+                <p className="mt-1 text-sm text-muted-foreground">{publishTarget.title}</p>
+              </div>
+              <Button variant="ghost" size="sm" onClick={() => setPublishTarget(null)} disabled={publishing}>
+                <X className="h-4 w-4" />
+              </Button>
+            </div>
+
+            <div className="mt-5 space-y-4">
+              <div className="space-y-2">
+                <Label>Channels</Label>
+                <div className="grid grid-cols-2 gap-3">
+                  {(['shopify', 'etsy'] as const).map((channel) => (
+                    <label key={channel} className="flex items-center gap-2 rounded-lg border p-3 text-sm">
+                      <input type="checkbox" checked={publishChannels.includes(channel)} onChange={() => togglePublishChannel(channel)} />
+                      {formatChannel(channel)}
+                    </label>
+                  ))}
+                </div>
+                {publishChannels.length === 0 && <p className="text-sm text-destructive">Choose at least one channel.</p>}
+              </div>
+
+              <div className="space-y-2">
+                <Label>Price (£)</Label>
+                <Input type="number" min="0.01" step="0.01" value={publishPrice} onChange={(event) => setPublishPrice(event.target.value)} />
+                {publishPriceError && <p className="text-sm text-destructive">{publishPriceError}</p>}
+              </div>
+            </div>
+
+            <div className="mt-6 flex justify-end gap-3">
+              <Button variant="outline" onClick={() => setPublishTarget(null)} disabled={publishing}>Cancel</Button>
+              <Button onClick={handlePublish} disabled={!canConfirmPublish}>
+                {publishing && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                Confirm Publish
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

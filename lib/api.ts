@@ -115,6 +115,19 @@ export interface TitleLibraryResponse {
 export type ProductType = 'tee' | 'mug';
 export type DesignMode = 'artwork-only' | 'combined';
 
+export interface ColourMeta {
+  name: string;
+  hex: string;
+  available: string[];
+}
+
+export interface VariantsResponse {
+  productType: string;
+  colours: ColourMeta[];
+  sizes: string[];
+  sizePricing: Record<string, number>;
+}
+
 export interface GenerateRequest {
   title: string;
   niche: string;
@@ -167,6 +180,8 @@ export interface PublishRequest {
   subNiche: string;
   priceGbp: number;
   channels: Array<'shopify' | 'etsy'>;
+  colours?: string[];   // Optional: colour names (e.g. ['Black','White']); defaults to all
+  sizes?: string[];     // Optional: size names (e.g. ['M','L','XL']); defaults to all
 }
 
 export interface PublishResponse {
@@ -217,4 +232,6 @@ export const api = {
     apiFetch<PublishResponse>('/api/publish', { method: 'POST', body: req }),
   uploadDesign: (formData: FormData) =>
     apiFetchFormData<UploadDesignResponse>('/api/upload-design', formData),
+  getVariants: (productType: ProductType = 'tee') =>
+    apiFetch<VariantsResponse>(`/api/variants?productType=${productType}`),
 };

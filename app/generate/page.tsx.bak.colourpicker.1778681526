@@ -10,10 +10,8 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { CheckCircle2, Clock, Eye, ImageIcon, Loader2, Sparkles, Trash2, ThumbsDown, ThumbsUp, Upload, X, XCircle } from 'lucide-react';
+import { CheckCircle2, Clock, ImageIcon, Loader2, Sparkles, Trash2, ThumbsDown, ThumbsUp, Upload, X, XCircle } from 'lucide-react';
 import { toast } from 'sonner';
-import ColourPicker from '@/components/ColourPicker';
-import MockupPreview from '@/components/MockupPreview';
 
 type ApprovedDesign = {
   jobId: string;
@@ -134,8 +132,6 @@ export default function GeneratePage() {
   const [publishTarget, setPublishTarget] = useState<PublishTarget>(null);
   const [publishChannels, setPublishChannels] = useState<Array<'shopify' | 'etsy'>>(['shopify', 'etsy']);
   const [publishPrice, setPublishPrice] = useState('19.99');
-  const [publishColours, setPublishColours] = useState<string[]>([]);
-  const [mockupTarget, setMockupTarget] = useState<ApprovedDesign | null>(null);
   const [publishing, setPublishing] = useState(false);
 
   const [uploadMode, setUploadMode] = useState<UploadMode>('finished');
@@ -484,11 +480,6 @@ export default function GeneratePage() {
     setPublishTarget(item);
     setPublishChannels(['shopify', 'etsy']);
     setPublishPrice('19.99');
-    // Load all colours by default; ColourPicker handles defaults via empty-array signal
-    setPublishColours([]); // empty = backend uses all defaults
-    api.getVariants('tee')
-      .then((res) => setPublishColours(res.colours.map((c) => c.name)))
-      .catch(() => { /* fall back to backend defaults */ });
   }
 
   async function handlePublish() {
@@ -503,7 +494,6 @@ export default function GeneratePage() {
         subNiche: publishTarget.subNiche || '',
         priceGbp: publishPriceNumber,
         channels: publishChannels,
-        colours: publishColours.length > 0 ? publishColours : undefined,
       });
       const channels = successfulChannels(response);
       if (channels.length === 0) {
@@ -931,19 +921,9 @@ export default function GeneratePage() {
                           )}
                         </div>
                       ) : (
-                        <div className="mt-3 space-y-2">
-                          <Button
-                            variant="outline"
-                            className="w-full"
-                            onClick={() => setMockupTarget(item)}
-                          >
-                            <Eye className="mr-2 h-4 w-4" />
-                            Preview Mockup
-                          </Button>
-                          <Button className="w-full" onClick={() => openPublish(item)}>
-                            Publish to Printify
-                          </Button>
-                        </div>
+                        <Button className="mt-3 w-full" onClick={() => openPublish(item)}>
+                          Publish to Printify
+                        </Button>
                       )}
                     </div>
                   );
@@ -956,16 +936,6 @@ export default function GeneratePage() {
           </Card>
         )}
       </main>
-
-      {mockupTarget && (
-        <MockupPreview
-          jobId={mockupTarget.jobId}
-          designTitle={mockupTarget.title}
-          isOpen={true}
-          onClose={() => setMockupTarget(null)}
-          onPublishClick={() => { const t = mockupTarget; setMockupTarget(null); openPublish(t); }}
-        />
-      )}
 
       {publishTarget && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
@@ -992,10 +962,6 @@ export default function GeneratePage() {
                   ))}
                 </div>
                 {publishChannels.length === 0 && <p className="text-sm text-destructive">Choose at least one channel.</p>}
-              </div>
-
-              <div className="space-y-2">
-                <ColourPicker selected={publishColours} onChange={setPublishColours} productType="tee" />
               </div>
 
               <div className="space-y-2">

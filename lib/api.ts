@@ -131,6 +131,7 @@ export interface VariantsResponse {
 export interface GenerateRequest {
   title: string;
   niche: string;
+  subNiche?: string;
   type: ProductType;
   layout: 'centered-badge';
   mode: DesignMode;

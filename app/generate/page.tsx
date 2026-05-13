@@ -335,6 +335,7 @@ export default function GeneratePage() {
       const response = await api.generate({
         title: activeTitle,
         niche: selectedNiche,
+        subNiche: selectedSubNiche,
         type: productType,
         layout,
         mode: designMode,

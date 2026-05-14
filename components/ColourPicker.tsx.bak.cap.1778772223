@@ -3,16 +3,6 @@
 import { useState, useEffect } from 'react';
 import { api, type ColourMeta } from '@/lib/api';
 
-// 12 popular default colours stay under Printify's 100-variant cap (12 × 8 sizes = 96)
-const DEFAULT_SELECTED_COLOURS = [
-  'Black', 'White', 'Navy', 'Asphalt', 'Soft Cream',
-  'Maroon', 'Forest', 'Mustard',
-  'Heather Navy', 'Heather Forest', 'Heather Mauve', 'Heather Mustard',
-];
-
-const PRINTIFY_VARIANT_CAP = 100;
-const SIZES_PER_COLOUR = 8;
-
 interface ColourPickerProps {
   selected: string[];
   onChange: (colours: string[]) => void;
@@ -52,13 +42,6 @@ export default function ColourPicker({ selected, onChange, productType = 'tee' }
   }
 
   function selectAll() {
-    // Select only the 12 default colours (stays under Printify's 100 variant cap)
-    const defaults = colours.filter((c) => DEFAULT_SELECTED_COLOURS.includes(c.name)).map((c) => c.name);
-    onChange(defaults);
-  }
-  
-  function selectAllRaw() {
-    // Select literally all colours (will likely exceed cap — used for "Max" button)
     onChange(colours.map((c) => c.name));
   }
 
@@ -76,40 +59,27 @@ export default function ColourPicker({ selected, onChange, productType = 'tee' }
 
   return (
     <div className="space-y-2">
-      <div className="space-y-1">
-        <div className="flex items-center justify-between text-sm">
-          <span className="font-medium">
-            Colours ({selected.length}/{colours.length})
-          </span>
-          <div className="flex gap-2">
-            <button
-              type="button"
-              onClick={selectAll}
-              className="text-xs text-blue-600 hover:underline"
-              title="Select recommended 12 colours"
-            >
-              Recommended
-            </button>
-            <span className="text-gray-300">|</span>
-            <button
-              type="button"
-              onClick={deselectAll}
-              className="text-xs text-blue-600 hover:underline"
-            >
-              None
-            </button>
-          </div>
+      <div className="flex items-center justify-between text-sm">
+        <span className="font-medium">
+          Colours ({selected.length}/{colours.length})
+        </span>
+        <div className="flex gap-2">
+          <button
+            type="button"
+            onClick={selectAll}
+            className="text-xs text-blue-600 hover:underline"
+          >
+            All
+          </button>
+          <span className="text-gray-300">|</span>
+          <button
+            type="button"
+            onClick={deselectAll}
+            className="text-xs text-blue-600 hover:underline"
+          >
+            None
+          </button>
         </div>
-        {(() => {
-          const variantCount = selected.length * SIZES_PER_COLOUR;
-          const overCap = variantCount > PRINTIFY_VARIANT_CAP;
-          return (
-            <p className={`text-xs ${overCap ? 'text-red-600 font-medium' : 'text-gray-500'}`}>
-              {selected.length} colours × {SIZES_PER_COLOUR} sizes = {variantCount} variants
-              {overCap && ` — exceeds Printify limit (${PRINTIFY_VARIANT_CAP})`}
-            </p>
-          );
-        })()}
       </div>
       <div className="grid grid-cols-6 sm:grid-cols-8 gap-2">
         {colours.map((colour) => {

@@ -486,9 +486,19 @@ export default function GeneratePage() {
     setPublishChannels(['shopify', 'etsy']);
     setPublishPrice('19.99');
     // Load all colours by default; ColourPicker handles defaults via empty-array signal
+    // Default to 12 recommended colours (stays under Printify 100-variant cap)
+    const RECOMMENDED_DEFAULTS = [
+      'Black', 'White', 'Navy', 'Asphalt', 'Soft Cream',
+      'Maroon', 'Forest', 'Mustard',
+      'Heather Navy', 'Heather Forest', 'Heather Mauve', 'Heather Mustard',
+    ];
     setPublishColours([]); // empty = backend uses all defaults
     api.getVariants('tee')
-      .then((res) => setPublishColours(res.colours.map((c) => c.name)))
+      .then((res) => {
+        const available = res.colours.map((c) => c.name);
+        const recommended = available.filter((name) => RECOMMENDED_DEFAULTS.includes(name));
+        setPublishColours(recommended);
+      })
       .catch(() => { /* fall back to backend defaults */ });
   }
 

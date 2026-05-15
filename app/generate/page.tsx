@@ -138,6 +138,8 @@ export default function GeneratePage() {
   const [publishColours, setPublishColours] = useState<string[]>([]);
   const [mockupTarget, setMockupTarget] = useState<ApprovedDesign | null>(null);
   const [publishPlacement, setPublishPlacement] = useState<{ preset?: string; x?: number; y?: number; scale?: number }>({});
+  const [deleteTarget, setDeleteTarget] = useState<ApprovedDesign | null>(null);
+  const [deleting, setDeleting] = useState(false);
   const [publishing, setPublishing] = useState(false);
 
   const [uploadMode, setUploadMode] = useState<UploadMode>('finished');
@@ -546,6 +548,58 @@ export default function GeneratePage() {
     }
   }
 
+  async function handleDelete(scope: 'soft' | 'hard') {
+    if (!deleteTarget) return;
+    try {
+      setDeleting(true);
+
+      // Hard delete: remove from Printify (cascades to Shopify/Etsy)
+      if (scope === 'hard') {
+        const pub = published[deleteTarget.jobId];
+        if (pub && pub.printifyIds) {
+          const channelMap: Record<string, number> = { shopify: 26974619, etsy: 26982418 };
+          let anyFailed = false;
+          for (const [channel, productId] of Object.entries(pub.printifyIds)) {
+            const shopId = channelMap[channel];
+            if (!shopId || !productId) continue;
+            try {
+              await api.deleteProduct(productId as string, shopId);
+            } catch (err) {
+              console.error(`Failed to delete ${channel} product:`, err);
+              anyFailed = true;
+            }
+          }
+          if (anyFailed) {
+            toast.error('Some channels failed to delete — check console');
+          } else {
+            toast.success(`Deleted from Printify (${Object.keys(pub.printifyIds).join(', ')})`);
+          }
+        }
+      }
+
+      // Both scopes: remove from approved queue + published state
+      const nextApproved = approved.filter((a) => a.jobId !== deleteTarget.jobId);
+      setApproved(nextApproved);
+      saveApproved(nextApproved);
+
+      if (published[deleteTarget.jobId]) {
+        const nextPublished = { ...published };
+        delete nextPublished[deleteTarget.jobId];
+        setPublished(nextPublished);
+        savePublished(nextPublished);
+      }
+
+      if (scope === 'soft') {
+        toast.success('Removed from approved queue (listing stays live)');
+      }
+      setDeleteTarget(null);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Delete failed');
+    } finally {
+      setDeleting(false);
+    }
+  }
+
   function togglePublishChannel(channel: 'shopify' | 'etsy') {
     setPublishChannels((current) =>
       current.includes(channel) ? current.filter((item) => item !== channel) : [...current, channel]
@@ -927,7 +981,17 @@ export default function GeneratePage() {
                     <div key={item.jobId} className={`rounded-lg border p-3 ${pub ? 'border-green-500/60 bg-green-500/5' : ''}`}>
                       <div className="flex items-start justify-between gap-2">
                         <div className="font-medium">{item.title}</div>
-                        {pub && <Badge className="bg-green-600">Published ✓</Badge>}
+                        <div className="flex items-center gap-2">
+                          {pub && <Badge className="bg-green-600">Published ✓</Badge>}
+                          <button
+                            type="button"
+                            onClick={() => setDeleteTarget(item)}
+                            className="text-muted-foreground hover:text-red-600 transition"
+                            title="Delete design"
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </button>
+                        </div>
                       </div>
                       <div className="mt-2 overflow-hidden rounded-md border bg-muted">
                         <img src={`/api/proxy/api/generate/${item.jobId}/image?type=composite`} alt={item.title} className="h-36 w-full object-contain" />
@@ -971,6 +1035,68 @@ export default function GeneratePage() {
           </Card>
         )}
       </main>
+
+      {deleteTarget && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
+          <div className="w-full max-w-md rounded-xl border bg-background p-6 shadow-xl">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <h2 className="text-xl font-semibold">Delete design</h2>
+                <p className="mt-1 text-sm text-muted-foreground">{deleteTarget.title}</p>
+              </div>
+              <Button variant="ghost" size="sm" onClick={() => setDeleteTarget(null)} disabled={deleting}>
+                <X className="h-4 w-4" />
+              </Button>
+            </div>
+
+            <div className="mt-5 space-y-3">
+              {published[deleteTarget.jobId] ? (
+                <>
+                  <p className="text-sm">This design is <strong>published</strong> to {published[deleteTarget.jobId].publishedChannels.map(formatChannel).join(' + ')}.</p>
+                  <p className="text-sm text-muted-foreground">Choose how to delete:</p>
+
+                  <button
+                    type="button"
+                    disabled={deleting}
+                    onClick={() => handleDelete('soft')}
+                    className="w-full rounded-lg border p-3 text-left hover:bg-muted transition disabled:opacity-50"
+                  >
+                    <div className="font-medium text-sm">Remove from queue only</div>
+                    <div className="text-xs text-muted-foreground mt-1">Hides from POD Studio. Listing stays live on your shops.</div>
+                  </button>
+
+                  <button
+                    type="button"
+                    disabled={deleting}
+                    onClick={() => handleDelete('hard')}
+                    className="w-full rounded-lg border border-red-500/60 bg-red-500/5 p-3 text-left hover:bg-red-500/10 transition disabled:opacity-50"
+                  >
+                    <div className="font-medium text-sm text-red-600 dark:text-red-400">Delete everything</div>
+                    <div className="text-xs text-muted-foreground mt-1">Removes from Printify, which cascades to Etsy/Shopify. Cannot be undone.</div>
+                  </button>
+                </>
+              ) : (
+                <>
+                  <p className="text-sm">This design is not published anywhere.</p>
+                  <button
+                    type="button"
+                    disabled={deleting}
+                    onClick={() => handleDelete('soft')}
+                    className="w-full rounded-lg border border-red-500/60 bg-red-500/5 p-3 text-left hover:bg-red-500/10 transition disabled:opacity-50"
+                  >
+                    <div className="font-medium text-sm text-red-600 dark:text-red-400">Remove from queue</div>
+                    <div className="text-xs text-muted-foreground mt-1">This will remove the design from your approved queue.</div>
+                  </button>
+                </>
+              )}
+
+              <Button variant="outline" className="w-full" onClick={() => setDeleteTarget(null)} disabled={deleting}>
+                Cancel
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {mockupTarget && (
         <MockupPreview

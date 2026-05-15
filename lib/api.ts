@@ -271,4 +271,10 @@ export const api = {
 
   getPlacement: (subNiche?: string) =>
     apiFetch<PlacementResponse>(`/api/placement${subNiche ? `?subNiche=${encodeURIComponent(subNiche)}` : ''}`),
+
+  deleteProduct: (printifyProductId: string, shopId: number) =>
+    apiFetch<{ ok: boolean; printifyProductId: string; shopId: number }>(
+      `/api/products/${encodeURIComponent(printifyProductId)}?shopId=${shopId}`,
+      { method: 'DELETE' }
+    ),
 };

@@ -277,4 +277,19 @@ export const api = {
       `/api/products/${encodeURIComponent(printifyProductId)}?shopId=${shopId}`,
       { method: 'DELETE' }
     ),
+
+  updateProduct: (
+    printifyProductId: string,
+    shopId: number,
+    fields: { title?: string; description?: string; tags?: string[]; priceGbp?: number }
+  ) =>
+    apiFetch<{ ok: boolean; printifyProductId: string; shopId: number; updated: string[]; republished: boolean }>(
+      `/api/products/${encodeURIComponent(printifyProductId)}?shopId=${shopId}`,
+      { method: 'PUT', body: JSON.stringify(fields), headers: { 'Content-Type': 'application/json' } }
+    ),
+
+  getProductDetails: (printifyProductId: string, shopId: number) =>
+    apiFetch<{ id: string; title: string; description: string; tags: string[]; variants: Array<{ id: number; price: number; is_enabled: boolean }> }>(
+      `/api/products/${encodeURIComponent(printifyProductId)}/details?shopId=${shopId}`
+    ),
 };

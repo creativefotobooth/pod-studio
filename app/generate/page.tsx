@@ -10,7 +10,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { CheckCircle2, Clock, Eye, ImageIcon, Loader2, Sparkles, Trash2, ThumbsDown, ThumbsUp, Upload, X, XCircle } from 'lucide-react';
+import { CheckCircle2, Clock, Eye, ImageIcon, Loader2, Pencil, Sparkles, Trash2, ThumbsDown, ThumbsUp, Upload, X, XCircle } from 'lucide-react';
 import { toast } from 'sonner';
 import ColourPicker from '@/components/ColourPicker';
 import MockupPreview from '@/components/MockupPreview';
@@ -140,6 +140,10 @@ export default function GeneratePage() {
   const [publishPlacement, setPublishPlacement] = useState<{ preset?: string; x?: number; y?: number; scale?: number }>({});
   const [deleteTarget, setDeleteTarget] = useState<ApprovedDesign | null>(null);
   const [deleting, setDeleting] = useState(false);
+  const [editTarget, setEditTarget] = useState<ApprovedDesign | null>(null);
+  const [editLoading, setEditLoading] = useState(false);
+  const [editSaving, setEditSaving] = useState(false);
+  const [editFields, setEditFields] = useState<{ title: string; description: string; tags: string; priceGbp: string }>({ title: '', description: '', tags: '', priceGbp: '' });
   const [publishing, setPublishing] = useState(false);
 
   const [uploadMode, setUploadMode] = useState<UploadMode>('finished');
@@ -600,6 +604,99 @@ export default function GeneratePage() {
     }
   }
 
+  async function openEdit(item: ApprovedDesign) {
+    const pub = published[item.jobId];
+    if (!pub || !pub.printifyIds) {
+      toast.error('Cannot edit — design is not published');
+      return;
+    }
+    setEditTarget(item);
+    setEditLoading(true);
+    try {
+      const channelMap: Record<string, number> = { shopify: 26974619, etsy: 26982418 };
+      // Fetch from the first available channel for current values
+      const [firstChannel, firstProductId] = Object.entries(pub.printifyIds)[0];
+      const shopId = channelMap[firstChannel];
+      if (!shopId || !firstProductId) throw new Error('No valid channel to fetch from');
+
+      const data = await api.getProductDetails(firstProductId as string, shopId);
+      const firstVariant = data.variants?.[0];
+      const priceGbp = firstVariant ? (firstVariant.price / 100).toFixed(2) : '19.99';
+
+      setEditFields({
+        title: data.title || item.title,
+        description: data.description || '',
+        tags: (data.tags || []).join(', '),
+        priceGbp,
+      });
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to load product');
+      setEditTarget(null);
+    } finally {
+      setEditLoading(false);
+    }
+  }
+
+  async function handleEditSave() {
+    if (!editTarget) return;
+    const pub = published[editTarget.jobId];
+    if (!pub) return;
+
+    const priceGbp = Number(editFields.priceGbp);
+    if (!Number.isFinite(priceGbp) || priceGbp <= 0) {
+      toast.error('Enter a valid price');
+      return;
+    }
+    const tags = editFields.tags.split(',').map((t) => t.trim()).filter(Boolean);
+    if (!editFields.title.trim()) {
+      toast.error('Title is required');
+      return;
+    }
+
+    setEditSaving(true);
+    try {
+      const channelMap: Record<string, number> = { shopify: 26974619, etsy: 26982418 };
+      const failed: string[] = [];
+      const succeeded: string[] = [];
+
+      for (const [channel, productId] of Object.entries(pub.printifyIds)) {
+        const shopId = channelMap[channel];
+        if (!shopId || !productId) continue;
+        try {
+          await api.updateProduct(productId as string, shopId, {
+            title: editFields.title.trim(),
+            description: editFields.description,
+            tags,
+            priceGbp,
+          });
+          succeeded.push(channel);
+        } catch (err) {
+          console.error(`Edit failed for ${channel}:`, err);
+          failed.push(channel);
+        }
+      }
+
+      if (succeeded.length > 0 && failed.length === 0) {
+        toast.success(`Updated on ${succeeded.map(formatChannel).join(' + ')}`);
+        // Update local title in approved queue so UI stays consistent
+        const nextApproved = approved.map((a) =>
+          a.jobId === editTarget.jobId ? { ...a, title: editFields.title.trim() } : a
+        );
+        setApproved(nextApproved);
+        saveApproved(nextApproved);
+        setEditTarget(null);
+      } else if (succeeded.length > 0) {
+        toast.error(`Partial: updated ${succeeded.join(',')} but failed ${failed.join(',')}`);
+      } else {
+        toast.error('All update attempts failed');
+      }
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Update failed');
+    } finally {
+      setEditSaving(false);
+    }
+  }
+
   function togglePublishChannel(channel: 'shopify' | 'etsy') {
     setPublishChannels((current) =>
       current.includes(channel) ? current.filter((item) => item !== channel) : [...current, channel]
@@ -983,6 +1080,16 @@ export default function GeneratePage() {
                         <div className="font-medium">{item.title}</div>
                         <div className="flex items-center gap-2">
                           {pub && <Badge className="bg-green-600">Published ✓</Badge>}
+                          {pub && (
+                            <button
+                              type="button"
+                              onClick={() => openEdit(item)}
+                              className="text-muted-foreground hover:text-blue-600 transition"
+                              title="Edit design"
+                            >
+                              <Pencil className="h-4 w-4" />
+                            </button>
+                          )}
                           <button
                             type="button"
                             onClick={() => setDeleteTarget(item)}
@@ -1035,6 +1142,89 @@ export default function GeneratePage() {
           </Card>
         )}
       </main>
+
+      {editTarget && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
+          <div className="w-full max-w-lg rounded-xl border bg-background p-6 shadow-xl">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <h2 className="text-xl font-semibold">Edit design</h2>
+                <p className="mt-1 text-sm text-muted-foreground">{editTarget.title}</p>
+              </div>
+              <Button variant="ghost" size="sm" onClick={() => setEditTarget(null)} disabled={editSaving}>
+                <X className="h-4 w-4" />
+              </Button>
+            </div>
+
+            {editLoading ? (
+              <div className="mt-6 flex items-center justify-center py-12">
+                <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+              </div>
+            ) : (
+              <div className="mt-5 space-y-4">
+                <div className="space-y-2">
+                  <Label htmlFor="editTitle">Title</Label>
+                  <Input
+                    id="editTitle"
+                    value={editFields.title}
+                    onChange={(e) => setEditFields((f) => ({ ...f, title: e.target.value }))}
+                    disabled={editSaving}
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="editDescription">Description</Label>
+                  <textarea
+                    id="editDescription"
+                    value={editFields.description}
+                    onChange={(e) => setEditFields((f) => ({ ...f, description: e.target.value }))}
+                    disabled={editSaving}
+                    rows={6}
+                    className="w-full rounded-md border bg-background px-3 py-2 text-sm"
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="editTags">Tags (comma-separated)</Label>
+                  <Input
+                    id="editTags"
+                    value={editFields.tags}
+                    onChange={(e) => setEditFields((f) => ({ ...f, tags: e.target.value }))}
+                    disabled={editSaving}
+                    placeholder="bohemian, general, tee"
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="editPrice">Price (£)</Label>
+                  <Input
+                    id="editPrice"
+                    type="number"
+                    min="0.01"
+                    step="0.01"
+                    value={editFields.priceGbp}
+                    onChange={(e) => setEditFields((f) => ({ ...f, priceGbp: e.target.value }))}
+                    disabled={editSaving}
+                  />
+                </div>
+
+                <div className="flex gap-2 pt-2">
+                  <Button variant="outline" className="flex-1" onClick={() => setEditTarget(null)} disabled={editSaving}>
+                    Cancel
+                  </Button>
+                  <Button className="flex-1" onClick={handleEditSave} disabled={editSaving}>
+                    {editSaving ? (
+                      <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Saving...</>
+                    ) : (
+                      'Save & Republish'
+                    )}
+                  </Button>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
 
       {deleteTarget && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">

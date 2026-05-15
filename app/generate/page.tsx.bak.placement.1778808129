@@ -14,7 +14,6 @@ import { CheckCircle2, Clock, Eye, ImageIcon, Loader2, Sparkles, Trash2, ThumbsD
 import { toast } from 'sonner';
 import ColourPicker from '@/components/ColourPicker';
 import MockupPreview from '@/components/MockupPreview';
-import PlacementPicker from '@/components/PlacementPicker';
 
 type ApprovedDesign = {
   jobId: string;
@@ -137,7 +136,6 @@ export default function GeneratePage() {
   const [publishPrice, setPublishPrice] = useState('19.99');
   const [publishColours, setPublishColours] = useState<string[]>([]);
   const [mockupTarget, setMockupTarget] = useState<ApprovedDesign | null>(null);
-  const [publishPlacement, setPublishPlacement] = useState<{ preset?: string; x?: number; y?: number; scale?: number }>({});
   const [publishing, setPublishing] = useState(false);
 
   const [uploadMode, setUploadMode] = useState<UploadMode>('finished');
@@ -487,7 +485,6 @@ export default function GeneratePage() {
     setPublishTarget(item);
     setPublishChannels(['shopify', 'etsy']);
     setPublishPrice('19.99');
-    setPublishPlacement({}); // PlacementPicker will set niche default
     // Load all colours by default; ColourPicker handles defaults via empty-array signal
     // Default to 12 recommended colours (stays under Printify 100-variant cap)
     const RECOMMENDED_DEFAULTS = [
@@ -518,7 +515,6 @@ export default function GeneratePage() {
         priceGbp: publishPriceNumber,
         channels: publishChannels,
         colours: publishColours.length > 0 ? publishColours : undefined,
-        placement: Object.keys(publishPlacement).length > 0 ? publishPlacement : undefined,
       });
       const channels = successfulChannels(response);
       if (channels.length === 0) {
@@ -1011,14 +1007,6 @@ export default function GeneratePage() {
 
               <div className="space-y-2">
                 <ColourPicker selected={publishColours} onChange={setPublishColours} productType="tee" />
-              </div>
-
-              <div className="space-y-2">
-                <PlacementPicker
-                  subNiche={publishTarget?.subNiche ? `${publishTarget.niche}-${publishTarget.subNiche}` : publishTarget?.niche || 'general'}
-                  value={publishPlacement}
-                  onChange={setPublishPlacement}
-                />
               </div>
 
               <div className="space-y-2">

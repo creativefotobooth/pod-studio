@@ -128,6 +128,38 @@ export interface VariantsResponse {
   sizePricing: Record<string, number>;
 }
 
+export interface PlacementPreset {
+  label: string;
+  description: string;
+  x: number;
+  y: number;
+  scale: number;
+}
+
+export interface PlacementBounds {
+  min: number;
+  max: number;
+  step: number;
+}
+
+export interface PlacementResponse {
+  presets: Record<string, PlacementPreset>;
+  nicheDefaults: Record<string, string>;
+  manualBounds: {
+    x: PlacementBounds;
+    y: PlacementBounds;
+    scale: PlacementBounds;
+  };
+  resolved: (PlacementPreset & { source: string }) | null;
+}
+
+export interface PlacementValue {
+  preset?: string;
+  x?: number;
+  y?: number;
+  scale?: number;
+}
+
 export interface GenerateRequest {
   title: string;
   niche: string;
@@ -183,6 +215,7 @@ export interface PublishRequest {
   channels: Array<'shopify' | 'etsy'>;
   colours?: string[];   // Optional: colour names (e.g. ['Black','White']); defaults to all
   sizes?: string[];     // Optional: size names (e.g. ['M','L','XL']); defaults to all
+  placement?: { preset?: string; x?: number; y?: number; scale?: number };
 }
 
 export interface PublishResponse {
@@ -235,4 +268,7 @@ export const api = {
     apiFetchFormData<UploadDesignResponse>('/api/upload-design', formData),
   getVariants: (productType: ProductType = 'tee') =>
     apiFetch<VariantsResponse>(`/api/variants?productType=${productType}`),
+
+  getPlacement: (subNiche?: string) =>
+    apiFetch<PlacementResponse>(`/api/placement${subNiche ? `?subNiche=${encodeURIComponent(subNiche)}` : ''}`),
 };

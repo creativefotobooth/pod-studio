@@ -836,13 +836,14 @@ export default function GeneratePage() {
                 <div className="space-y-2">
                   <Label>Design mode</Label>
                   <Tabs value={designMode} onValueChange={(value) => value && setDesignMode(value as DesignMode)}>
-                    <TabsList className="grid w-full grid-cols-2">
+                    <TabsList className="grid w-full grid-cols-3">
                       <TabsTrigger value="artwork-only">Artwork only</TabsTrigger>
                       <TabsTrigger value="combined">Artwork + text</TabsTrigger>
+                      <TabsTrigger value="text-overlay-ai">AI text + object</TabsTrigger>
                     </TabsList>
                   </Tabs>
                   <p className="text-xs text-muted-foreground">
-                    Artwork only is the default. Artwork + text composites the title below the artwork.
+                    Artwork only is the default. Artwork + text composites the title below the artwork. AI text + object generates both the title text and a matching object as separate AI layers, then composites them — best for bold typography designs.
                   </p>
                 </div>
 

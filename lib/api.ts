@@ -113,7 +113,7 @@ export interface TitleLibraryResponse {
 }
 
 export type ProductType = 'tee' | 'mug';
-export type DesignMode = 'artwork-only' | 'combined';
+export type DesignMode = 'artwork-only' | 'combined' | 'text-overlay-ai';
 
 export interface ColourMeta {
   name: string;

@@ -852,15 +852,32 @@ export default function GeneratePage() {
                 </div>
 
                 <div className="space-y-2">
+                  <Label>Generation provider</Label>
+                  <Tabs value={provider} onValueChange={(value) => value && setProvider(value as Provider)}>
+                    <TabsList className="grid w-full grid-cols-2">
+                      <TabsTrigger value="fal">fal.ai (cloud)</TabsTrigger>
+                      <TabsTrigger value="local">Mac Mini (local)</TabsTrigger>
+                    </TabsList>
+                  </Tabs>
+                  <p className="text-xs text-muted-foreground">
+                    fal.ai is fast (~10s/gen, paid). Mac Mini is free but slower (~150-250s/gen) and does not support AI text + object.
+                  </p>
+                </div>
+
+                <div className="space-y-2">
                   <Label>Design mode</Label>
                   <Tabs value={designMode} onValueChange={(value) => value && setDesignMode(value as DesignMode)}>
-                    <TabsList className="grid w-full grid-cols-2">
+                    <TabsList className={`grid w-full ${provider === 'fal' ? 'grid-cols-3' : 'grid-cols-2'}`}>
                       <TabsTrigger value="artwork-only">Artwork only</TabsTrigger>
                       <TabsTrigger value="combined">Artwork + text</TabsTrigger>
+                      {provider === 'fal' && (
+                        <TabsTrigger value="text-overlay-ai">AI text + object</TabsTrigger>
+                      )}
                     </TabsList>
                   </Tabs>
                   <p className="text-xs text-muted-foreground">
                     Artwork only is the default. Artwork + text composites the title below the artwork.
+                    {provider === 'fal' && ' AI text + object generates both the title and a matching object as separate AI layers — best for bold typography.'}
                   </p>
                 </div>
 

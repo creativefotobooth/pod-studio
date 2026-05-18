@@ -114,6 +114,7 @@ export interface TitleLibraryResponse {
 
 export type ProductType = 'tee' | 'mug';
 export type DesignMode = 'artwork-only' | 'combined' | 'text-overlay-ai';
+export type Provider = 'fal' | 'local';
 
 export interface ColourMeta {
   name: string;
@@ -167,6 +168,7 @@ export interface GenerateRequest {
   type: ProductType;
   layout: 'centered-badge';
   mode: DesignMode;
+  provider?: Provider;
   critic: boolean;
 }
 

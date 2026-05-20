@@ -806,26 +806,34 @@ export default function GeneratePage() {
                 </div>
               )}
 
-              <div className="max-h-[430px] space-y-2 overflow-y-auto rounded-lg border p-2">
-                {titleCandidates.map((title) => (
-                  <button
-                    key={title}
-                    type="button"
-                    onClick={() => {
-                      setSelectedTitle(title);
-                      setCustomTitle('');
-                    }}
-                    className={`w-full rounded-md border px-3 py-2 text-left text-sm transition hover:bg-accent ${
-                      selectedTitle === title ? 'border-primary bg-primary/10' : 'border-transparent'
-                    }`}
-                  >
-                    {title}
-                  </button>
-                ))}
-                {!loadingTitles && titleCandidates.length === 0 && (
-                  <div className="p-6 text-center text-sm text-muted-foreground">No titles found for this filter.</div>
-                )}
-              </div>
+              {titleCandidates.length > 0 ? (
+                <details className="rounded-lg border" open={titleCandidates.length <= 5}>
+                  <summary className="cursor-pointer select-none px-3 py-2 text-sm text-muted-foreground hover:bg-accent rounded-lg">
+                    {titleCandidates.length} title{titleCandidates.length === 1 ? '' : 's'} available — tap to {titleCandidates.length <= 5 ? 'collapse' : 'expand'}
+                  </summary>
+                  <div className="max-h-[430px] space-y-2 overflow-y-auto p-2 border-t">
+                    {titleCandidates.map((title) => (
+                      <button
+                        key={title}
+                        type="button"
+                        onClick={() => {
+                          setSelectedTitle(title);
+                          setCustomTitle('');
+                        }}
+                        className={`w-full rounded-md border px-3 py-2 text-left text-sm transition hover:bg-accent ${
+                          selectedTitle === title ? 'border-primary bg-primary/10' : 'border-transparent'
+                        }`}
+                      >
+                        {title}
+                      </button>
+                    ))}
+                  </div>
+                </details>
+              ) : (
+                !loadingTitles && (
+                  <div className="rounded-lg border p-6 text-center text-sm text-muted-foreground">No titles found for this filter.</div>
+                )
+              )}
             </CardContent>
           </Card>
 
@@ -1115,8 +1123,22 @@ export default function GeneratePage() {
               </div>
             </CardHeader>
             <CardContent>
-              <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-3">
-                {visibleApproved.map((item) => {
+              {(() => {
+                // Group by subNiche (or niche if no subNiche), sorted by count desc
+                const groups: Record<string, ApprovedDesign[]> = {};
+                for (const item of visibleApproved) {
+                  const key = item.subNiche ? `${item.niche}-${item.subNiche}` : item.niche || 'other';
+                  if (!groups[key]) groups[key] = [];
+                  groups[key].push(item);
+                }
+                const sortedGroups = Object.entries(groups).sort((a, b) => b[1].length - a[1].length);
+                return sortedGroups.map(([groupKey, items]) => (
+                  <details key={groupKey} open className="mb-3 rounded-lg border">
+                    <summary className="cursor-pointer select-none px-3 py-2 text-sm font-medium hover:bg-accent rounded-lg">
+                      {groupKey} ({items.length})
+                    </summary>
+                    <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-3 p-3 border-t">
+                      {items.map((item) => {
                   const pub = published[item.jobId];
                   return (
                     <div key={item.jobId} className={`rounded-lg border p-3 ${pub ? 'border-green-500/60 bg-green-500/5' : ''}`}>
@@ -1177,8 +1199,11 @@ export default function GeneratePage() {
                       )}
                     </div>
                   );
-                })}
-              </div>
+                      })}
+                    </div>
+                  </details>
+                ));
+              })()}
               {visibleApproved.length === 0 && (
                 <div className="rounded-lg border p-6 text-center text-sm text-muted-foreground">All published items are hidden.</div>
               )}

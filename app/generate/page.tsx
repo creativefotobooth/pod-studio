@@ -2,7 +2,7 @@
 
 import { ChangeEvent, useEffect, useMemo, useState } from 'react';
 import { Header } from '@/components/Header';
-import { api, type DesignMode, type JobStatus, type ProductType, type Provider, type PublishResponse, type TitleLibraryResponse } from '@/lib/api';
+import { api, type DesignMode, type JobStatus, type ProductType, type PublishResponse, type TitleLibraryResponse } from '@/lib/api';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -123,16 +123,6 @@ export default function GeneratePage() {
   const [customTitle, setCustomTitle] = useState('');
   const [productType, setProductType] = useState<ProductType>('tee');
   const [designMode, setDesignMode] = useState<DesignMode>('artwork-only');
-  const [provider, setProvider] = useState<Provider>('fal');
-  const [activeTab, setActiveTab] = useState<'generate' | 'queue'>('generate');
-
-  // When user switches to local provider, fall back from text-overlay-ai
-  // (which is not supported on local — too slow on the Mac Mini).
-  useEffect(() => {
-    if (provider === 'local' && designMode === 'text-overlay-ai') {
-      setDesignMode('artwork-only');
-    }
-  }, [provider, designMode]);
   const [layout] = useState<'centered-badge'>('centered-badge');
 
   const [generating, setGenerating] = useState(false);
@@ -357,7 +347,6 @@ export default function GeneratePage() {
         type: productType,
         layout,
         mode: designMode,
-        provider,
         critic: false,
       });
       setJobId(response.jobId);
@@ -734,13 +723,6 @@ export default function GeneratePage() {
           </Badge>
         </div>
 
-        <Tabs value={activeTab} onValueChange={(value) => value && setActiveTab(value as 'generate' | 'queue')}>
-          <TabsList className="grid w-full max-w-md grid-cols-2">
-            <TabsTrigger value="generate">Generate</TabsTrigger>
-            <TabsTrigger value="queue">Approved queue ({approved.length})</TabsTrigger>
-          </TabsList>
-
-          <TabsContent value="generate" className="mt-6 space-y-6">
         <div className="grid gap-6 lg:grid-cols-[1.1fr_0.9fr]">
           <Card>
             <CardHeader>
@@ -806,34 +788,26 @@ export default function GeneratePage() {
                 </div>
               )}
 
-              {titleCandidates.length > 0 ? (
-                <details className="rounded-lg border" open={titleCandidates.length <= 5}>
-                  <summary className="cursor-pointer select-none px-3 py-2 text-sm text-muted-foreground hover:bg-accent rounded-lg">
-                    {titleCandidates.length} title{titleCandidates.length === 1 ? '' : 's'} available — tap to {titleCandidates.length <= 5 ? 'collapse' : 'expand'}
-                  </summary>
-                  <div className="max-h-[430px] space-y-2 overflow-y-auto p-2 border-t">
-                    {titleCandidates.map((title) => (
-                      <button
-                        key={title}
-                        type="button"
-                        onClick={() => {
-                          setSelectedTitle(title);
-                          setCustomTitle('');
-                        }}
-                        className={`w-full rounded-md border px-3 py-2 text-left text-sm transition hover:bg-accent ${
-                          selectedTitle === title ? 'border-primary bg-primary/10' : 'border-transparent'
-                        }`}
-                      >
-                        {title}
-                      </button>
-                    ))}
-                  </div>
-                </details>
-              ) : (
-                !loadingTitles && (
-                  <div className="rounded-lg border p-6 text-center text-sm text-muted-foreground">No titles found for this filter.</div>
-                )
-              )}
+              <div className="max-h-[430px] space-y-2 overflow-y-auto rounded-lg border p-2">
+                {titleCandidates.map((title) => (
+                  <button
+                    key={title}
+                    type="button"
+                    onClick={() => {
+                      setSelectedTitle(title);
+                      setCustomTitle('');
+                    }}
+                    className={`w-full rounded-md border px-3 py-2 text-left text-sm transition hover:bg-accent ${
+                      selectedTitle === title ? 'border-primary bg-primary/10' : 'border-transparent'
+                    }`}
+                  >
+                    {title}
+                  </button>
+                ))}
+                {!loadingTitles && titleCandidates.length === 0 && (
+                  <div className="p-6 text-center text-sm text-muted-foreground">No titles found for this filter.</div>
+                )}
+              </div>
             </CardContent>
           </Card>
 
@@ -860,32 +834,15 @@ export default function GeneratePage() {
                 </div>
 
                 <div className="space-y-2">
-                  <Label>Generation provider</Label>
-                  <Tabs value={provider} onValueChange={(value) => value && setProvider(value as Provider)}>
-                    <TabsList className="grid w-full grid-cols-2">
-                      <TabsTrigger value="fal">fal.ai (cloud)</TabsTrigger>
-                      <TabsTrigger value="local">Mac Mini (local)</TabsTrigger>
-                    </TabsList>
-                  </Tabs>
-                  <p className="text-xs text-muted-foreground">
-                    fal.ai is fast (~10s/gen, paid). Mac Mini is free but slower (~150-250s/gen) and does not support AI text + object.
-                  </p>
-                </div>
-
-                <div className="space-y-2">
                   <Label>Design mode</Label>
                   <Tabs value={designMode} onValueChange={(value) => value && setDesignMode(value as DesignMode)}>
-                    <TabsList className={`grid w-full ${provider === 'fal' ? 'grid-cols-3' : 'grid-cols-2'}`}>
+                    <TabsList className="grid w-full grid-cols-2">
                       <TabsTrigger value="artwork-only">Artwork only</TabsTrigger>
                       <TabsTrigger value="combined">Artwork + text</TabsTrigger>
-                      {provider === 'fal' && (
-                        <TabsTrigger value="text-overlay-ai">AI text + object</TabsTrigger>
-                      )}
                     </TabsList>
                   </Tabs>
                   <p className="text-xs text-muted-foreground">
                     Artwork only is the default. Artwork + text composites the title below the artwork.
-                    {provider === 'fal' && ' AI text + object generates both the title and a matching object as separate AI layers — best for bold typography.'}
                   </p>
                 </div>
 
@@ -1098,17 +1055,8 @@ export default function GeneratePage() {
             </Tabs>
           </CardContent>
         </Card>
-          </TabsContent>
 
-          <TabsContent value="queue" className="mt-6 space-y-6">
-            {approved.length === 0 ? (
-              <Card>
-                <CardHeader>
-                  <CardTitle>Approved queue</CardTitle>
-                  <CardDescription>No approved designs yet. Generate or upload some from the Generate tab.</CardDescription>
-                </CardHeader>
-              </Card>
-            ) : (
+        {approved.length > 0 && (
           <Card>
             <CardHeader>
               <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
@@ -1123,22 +1071,8 @@ export default function GeneratePage() {
               </div>
             </CardHeader>
             <CardContent>
-              {(() => {
-                // Group by subNiche (or niche if no subNiche), sorted by count desc
-                const groups: Record<string, ApprovedDesign[]> = {};
-                for (const item of visibleApproved) {
-                  const key = item.subNiche ? `${item.niche}-${item.subNiche}` : item.niche || 'other';
-                  if (!groups[key]) groups[key] = [];
-                  groups[key].push(item);
-                }
-                const sortedGroups = Object.entries(groups).sort((a, b) => b[1].length - a[1].length);
-                return sortedGroups.map(([groupKey, items]) => (
-                  <details key={groupKey} open className="mb-3 rounded-lg border">
-                    <summary className="cursor-pointer select-none px-3 py-2 text-sm font-medium hover:bg-accent rounded-lg">
-                      {groupKey} ({items.length})
-                    </summary>
-                    <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-3 p-3 border-t">
-                      {items.map((item) => {
+              <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-3">
+                {visibleApproved.map((item) => {
                   const pub = published[item.jobId];
                   return (
                     <div key={item.jobId} className={`rounded-lg border p-3 ${pub ? 'border-green-500/60 bg-green-500/5' : ''}`}>
@@ -1199,19 +1133,14 @@ export default function GeneratePage() {
                       )}
                     </div>
                   );
-                      })}
-                    </div>
-                  </details>
-                ));
-              })()}
+                })}
+              </div>
               {visibleApproved.length === 0 && (
                 <div className="rounded-lg border p-6 text-center text-sm text-muted-foreground">All published items are hidden.</div>
               )}
             </CardContent>
           </Card>
-            )}
-          </TabsContent>
-        </Tabs>
+        )}
       </main>
 
       {editTarget && (

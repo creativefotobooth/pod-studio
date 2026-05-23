@@ -2,7 +2,7 @@
 
 import { ChangeEvent, useEffect, useMemo, useState } from 'react';
 import { Header } from '@/components/Header';
-import { api, type DesignMode, type JobStatus, type ProductType, type Provider, type PublishResponse, type TitleLibraryResponse } from '@/lib/api';
+import { api, type DesignMode, type JobStatus, type Logo, type PlacementValue, type ProductType, type Provider, type PublishResponse, type TitleLibraryResponse } from '@/lib/api';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -124,7 +124,22 @@ export default function GeneratePage() {
   const [productType, setProductType] = useState<ProductType>('tee');
   const [designMode, setDesignMode] = useState<DesignMode>('artwork-only');
   const [provider, setProvider] = useState<Provider>('fal');
-  const [activeTab, setActiveTab] = useState<'generate' | 'queue'>('generate');
+  const [activeTab, setActiveTab] = useState<'generate' | 'queue' | 'uniforms'>('generate');
+
+  // Uniforms tab state
+  const [logos, setLogos] = useState<Logo[]>([]);
+  const [logosLoading, setLogosLoading] = useState(false);
+  const [logoUploadFile, setLogoUploadFile] = useState<File | null>(null);
+  const [logoUploadName, setLogoUploadName] = useState('');
+  const [logoUploading, setLogoUploading] = useState(false);
+  const [selectedLogoId, setSelectedLogoId] = useState<string | null>(null);
+  const [uniformColours, setUniformColours] = useState<string[]>([]);
+  const [uniformPlacement, setUniformPlacement] = useState<PlacementValue | string>('left-chest');
+  const [uniformPrice, setUniformPrice] = useState('24.99');
+  const [uniformTitle, setUniformTitle] = useState('');
+  const [uniformPublishing, setUniformPublishing] = useState(false);
+  const [uniformResult, setUniformResult] = useState<PublishResponse | null>(null);
+  const [uniformChannels, setUniformChannels] = useState<('shopify' | 'etsy')[]>(['shopify', 'etsy']);
 
   // When user switches to local provider, fall back from text-overlay-ai
   // (which is not supported on local — too slow on the Mac Mini).
@@ -714,6 +729,94 @@ export default function GeneratePage() {
     );
   }
 
+  // Load logos whenever the Uniforms tab is opened (or on mount if there are any)
+  useEffect(() => {
+    if (activeTab !== 'uniforms') return;
+    let cancelled = false;
+    setLogosLoading(true);
+    api.getLogos()
+      .then((res) => { if (!cancelled) setLogos(res.logos || []); })
+      .catch((err) => { if (!cancelled) toast.error('Failed to load logos: ' + err.message); })
+      .finally(() => { if (!cancelled) setLogosLoading(false); });
+    return () => { cancelled = true; };
+  }, [activeTab]);
+
+  // Also load logos once on mount so the badge count is accurate
+  useEffect(() => {
+    api.getLogos().then((res) => setLogos(res.logos || [])).catch(() => {});
+  }, []);
+
+  // Logo upload handler
+  const handleLogoUpload = async () => {
+    if (!logoUploadFile) { toast.error('Pick a PNG file first'); return; }
+    if (!logoUploadName.trim()) { toast.error('Give the logo a name'); return; }
+    setLogoUploading(true);
+    try {
+      const formData = new FormData();
+      formData.append('file', logoUploadFile);
+      formData.append('name', logoUploadName.trim());
+      const result = await api.uploadLogo(formData);
+      toast.success(`Uploaded: ${result.name}`);
+      setLogoUploadFile(null);
+      setLogoUploadName('');
+      // Reload logos
+      const res = await api.getLogos();
+      setLogos(res.logos || []);
+    } catch (err) {
+      toast.error('Logo upload failed: ' + (err as Error).message);
+    } finally {
+      setLogoUploading(false);
+    }
+  };
+
+  // Logo delete handler
+  const handleLogoDelete = async (logoId: string) => {
+    if (!confirm('Delete this logo? It will no longer be available for uniform publishing.')) return;
+    try {
+      await api.deleteLogo(logoId);
+      if (selectedLogoId === logoId) setSelectedLogoId(null);
+      const res = await api.getLogos();
+      setLogos(res.logos || []);
+      toast.success('Logo deleted');
+    } catch (err) {
+      toast.error('Delete failed: ' + (err as Error).message);
+    }
+  };
+
+  // Uniform publish handler
+  const handleUniformPublish = async () => {
+    if (!selectedLogoId) { toast.error('Select a logo first'); return; }
+    if (uniformChannels.length === 0) { toast.error('Pick at least one channel'); return; }
+    const price = parseFloat(uniformPrice);
+    if (isNaN(price) || price <= 0) { toast.error('Enter a valid price'); return; }
+    setUniformPublishing(true);
+    setUniformResult(null);
+    try {
+      const result = await api.publishUniform({
+        logoId: selectedLogoId,
+        productType: 'tee',
+        priceGbp: price,
+        colours: uniformColours.length > 0 ? uniformColours : undefined,
+        channels: uniformChannels,
+        placement: uniformPlacement,
+        title: uniformTitle.trim() || undefined,
+      });
+      setUniformResult(result);
+      if (result.ok) {
+        toast.success('Uniform published successfully');
+      } else if (result.partial) {
+        toast.warning('Uniform partially published — check results');
+      } else {
+        toast.error('Uniform publish failed');
+      }
+    } catch (err) {
+      toast.error('Publish failed: ' + (err as Error).message);
+    } finally {
+      setUniformPublishing(false);
+    }
+  };
+
+
   return (
     <div className="min-h-screen bg-background">
       <Header />
@@ -734,10 +837,11 @@ export default function GeneratePage() {
           </Badge>
         </div>
 
-        <Tabs value={activeTab} onValueChange={(value) => value && setActiveTab(value as 'generate' | 'queue')}>
-          <TabsList className="grid w-full max-w-md grid-cols-2">
+        <Tabs value={activeTab} onValueChange={(value) => value && setActiveTab(value as 'generate' | 'queue' | 'uniforms')}>
+          <TabsList className="grid w-full max-w-2xl grid-cols-3">
             <TabsTrigger value="generate">Generate</TabsTrigger>
             <TabsTrigger value="queue">Approved queue ({approved.length})</TabsTrigger>
+            <TabsTrigger value="uniforms">Uniforms ({logos.length})</TabsTrigger>
           </TabsList>
 
           <TabsContent value="generate" className="mt-6 space-y-6">
@@ -1209,6 +1313,197 @@ export default function GeneratePage() {
               )}
             </CardContent>
           </Card>
+            )}
+          </TabsContent>
+
+          <TabsContent value="uniforms" className="mt-6 space-y-6">
+            {/* Logo upload card — always visible */}
+            <Card>
+              <CardHeader>
+                <CardTitle>Upload a logo</CardTitle>
+                <CardDescription>PNG with transparent background, max 25MB. Once uploaded, the logo can be applied to any uniform tee.</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="space-y-2">
+                  <Label>Logo name</Label>
+                  <Input
+                    placeholder="e.g. CFB Primary"
+                    value={logoUploadName}
+                    onChange={(e) => setLogoUploadName(e.target.value)}
+                    disabled={logoUploading}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>PNG file (max 25MB)</Label>
+                  <Input
+                    type="file"
+                    accept="image/png"
+                    onChange={(e) => setLogoUploadFile(e.target.files?.[0] || null)}
+                    disabled={logoUploading}
+                  />
+                  {logoUploadFile && (
+                    <p className="text-xs text-muted-foreground">
+                      Selected: {logoUploadFile.name} ({(logoUploadFile.size / 1024).toFixed(1)} KB)
+                    </p>
+                  )}
+                </div>
+                <Button
+                  onClick={handleLogoUpload}
+                  disabled={!logoUploadFile || !logoUploadName.trim() || logoUploading}
+                  className="w-full"
+                >
+                  {logoUploading ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Uploading...</> : <><Upload className="mr-2 h-4 w-4" /> Upload Logo</>}
+                </Button>
+              </CardContent>
+            </Card>
+
+            {/* Logo gallery */}
+            <Card>
+              <CardHeader>
+                <CardTitle>Logo library ({logos.length})</CardTitle>
+                <CardDescription>Pick a logo to publish as a uniform tee. Logos are reused across products without re-uploading to Printify.</CardDescription>
+              </CardHeader>
+              <CardContent>
+                {logosLoading && (
+                  <div className="text-center text-sm text-muted-foreground p-6">
+                    <Loader2 className="mx-auto h-6 w-6 animate-spin mb-2" />
+                    Loading logos...
+                  </div>
+                )}
+                {!logosLoading && logos.length === 0 && (
+                  <div className="rounded-lg border border-dashed p-8 text-center text-sm text-muted-foreground">
+                    No logos yet. Upload one above to get started.
+                  </div>
+                )}
+                {!logosLoading && logos.length > 0 && (
+                  <div className="grid gap-3 grid-cols-2 md:grid-cols-3 lg:grid-cols-4">
+                    {logos.map((logo) => (
+                      <div
+                        key={logo.id}
+                        className={`relative rounded-lg border p-3 cursor-pointer transition ${
+                          selectedLogoId === logo.id ? 'border-primary bg-primary/5' : 'hover:bg-accent'
+                        }`}
+                        onClick={() => setSelectedLogoId(logo.id)}
+                      >
+                        <button
+                          type="button"
+                          onClick={(e) => { e.stopPropagation(); handleLogoDelete(logo.id); }}
+                          className="absolute top-1 right-1 rounded-full bg-background/80 p-1 hover:bg-destructive hover:text-destructive-foreground transition"
+                          title="Delete logo"
+                        >
+                          <Trash2 className="h-3 w-3" />
+                        </button>
+                        <div className="aspect-square overflow-hidden rounded bg-white flex items-center justify-center">
+                          <img
+                            src={`/api/proxy${logo.viewUrl}`}
+                            alt={logo.name}
+                            className="max-w-full max-h-full object-contain"
+                          />
+                        </div>
+                        <div className="mt-2 text-xs font-medium truncate">{logo.name}</div>
+                        {logo.printifyImageId && (
+                          <Badge variant="outline" className="mt-1 text-[10px]">Printify ready</Badge>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+
+            {/* Publish form — only shown when a logo is selected */}
+            {selectedLogoId && (
+              <Card>
+                <CardHeader>
+                  <CardTitle>Publish as uniform tee</CardTitle>
+                  <CardDescription>
+                    Logo: {logos.find(l => l.id === selectedLogoId)?.name}. The logo will be placed on the chest of every selected variant.
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <div className="space-y-2">
+                    <Label>Product title (optional)</Label>
+                    <Input
+                      placeholder={`${logos.find(l => l.id === selectedLogoId)?.name || 'Logo'} Uniform Tee`}
+                      value={uniformTitle}
+                      onChange={(e) => setUniformTitle(e.target.value)}
+                      disabled={uniformPublishing}
+                    />
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label>Channels</Label>
+                    <div className="flex gap-2 flex-wrap">
+                      {(['shopify', 'etsy'] as const).map((ch) => (
+                        <label key={ch} className="flex items-center gap-2 rounded-md border px-3 py-2 cursor-pointer hover:bg-accent">
+                          <input
+                            type="checkbox"
+                            checked={uniformChannels.includes(ch)}
+                            onChange={(e) => {
+                              if (e.target.checked) setUniformChannels([...uniformChannels, ch]);
+                              else setUniformChannels(uniformChannels.filter(c => c !== ch));
+                            }}
+                            disabled={uniformPublishing}
+                          />
+                          <span className="capitalize">{ch}</span>
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="space-y-2">
+                    <ColourPicker selected={uniformColours} onChange={setUniformColours} productType="tee" />
+                  </div>
+
+                  <div className="space-y-2">
+                    <PlacementPicker
+                      subNiche="uniform"
+                      value={typeof uniformPlacement === 'string' ? { preset: uniformPlacement } : uniformPlacement}
+                      onChange={(v) => setUniformPlacement(v)}
+                    />
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label>Price (£)</Label>
+                    <Input
+                      type="number"
+                      min="0.01"
+                      step="0.01"
+                      value={uniformPrice}
+                      onChange={(e) => setUniformPrice(e.target.value)}
+                      disabled={uniformPublishing}
+                    />
+                  </div>
+
+                  <Button
+                    onClick={handleUniformPublish}
+                    disabled={uniformPublishing || uniformChannels.length === 0}
+                    className="w-full"
+                  >
+                    {uniformPublishing ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Publishing...</> : <><Sparkles className="mr-2 h-4 w-4" /> Publish to Printify</>}
+                  </Button>
+
+                  {/* Result */}
+                  {uniformResult && (
+                    <div className={`rounded-md border p-3 text-sm ${uniformResult.ok ? 'border-green-500 bg-green-500/10' : uniformResult.partial ? 'border-yellow-500 bg-yellow-500/10' : 'border-destructive bg-destructive/10'}`}>
+                      <div className="font-medium">
+                        {uniformResult.ok ? '✓ Published successfully' : uniformResult.partial ? '⚠ Partially published' : '✗ Publish failed'}
+                      </div>
+                      <div className="mt-2 space-y-1">
+                        {Object.entries(uniformResult.results || {}).map(([channel, r]) => {
+                          const result = r as { ok: boolean; printifyProductId?: string; error?: string; warning?: string };
+                          return (
+                            <div key={channel} className="text-xs">
+                              <span className="capitalize font-medium">{channel}:</span>{' '}
+                              {result.ok ? `Created ${result.printifyProductId}` : (result.error || result.warning || 'Unknown')}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
             )}
           </TabsContent>
         </Tabs>

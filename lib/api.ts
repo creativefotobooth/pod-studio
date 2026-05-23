@@ -247,6 +247,49 @@ export interface UploadDesignResponse {
   uploadedAt: string;
 }
 
+export interface Logo {
+  id: string;
+  name: string;
+  slug?: string;
+  filename?: string | null;
+  fileSize?: number;
+  createdAt: string;
+  tags?: string[];
+  printifyImageId?: string | null;
+  viewUrl: string;
+}
+
+export interface LogosResponse {
+  logos: Logo[];
+  count: number;
+}
+
+export interface UploadLogoResponse {
+  id: string;
+  name: string;
+  filename: string;
+  printifyImageId: string | null;
+  viewUrl: string;
+  createdAt: string;
+}
+
+export interface PublishUniformRequest {
+  logoId: string;
+  productType: ProductType;
+  priceGbp: number;
+  colours?: string[];
+  sizes?: string[];
+  channels?: Array<'shopify' | 'etsy'>;
+  placement?: string | PlacementValue;
+  title?: string;
+  description?: string;
+}
+
+export interface PublishUniformResponse extends PublishResponse {
+  logoId: string;
+  placement: { x: number; y: number; scale: number; source: string };
+}
+
 export const api = {
   health: () => apiFetch<{ ok: boolean; version: string; uptime: number }>('/health'),
   getProducts: () => apiFetch<Product[]>('/api/products'),
@@ -294,4 +337,13 @@ export const api = {
     apiFetch<{ id: string; title: string; description: string; tags: string[]; variants: Array<{ id: number; price: number; is_enabled: boolean }> }>(
       `/api/products/${encodeURIComponent(printifyProductId)}/details?shopId=${shopId}`
     ),
+
+  // --- Logos + Uniforms ---
+  getLogos: () => apiFetch<LogosResponse>('/api/logos'),
+  uploadLogo: (formData: FormData) =>
+    apiFetchFormData<UploadLogoResponse>('/api/logos/upload', formData),
+  deleteLogo: (logoId: string) =>
+    apiFetch<{ ok: boolean; id: string }>(`/api/logos/${encodeURIComponent(logoId)}`, { method: 'DELETE' }),
+  publishUniform: (req: PublishUniformRequest) =>
+    apiFetch<PublishUniformResponse>('/api/publish/uniform', { method: 'POST', body: req }),
 };

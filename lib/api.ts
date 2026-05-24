@@ -290,6 +290,40 @@ export interface PublishUniformResponse extends PublishResponse {
   placement: { x: number; y: number; scale: number; source: string };
 }
 
+export interface Asset {
+  id: string;
+  jobId: string | null;
+  slug: string;
+  title: string | null;
+  niche: string | null;
+  subNiche: string | null;
+  mode: string | null;
+  productType: string | null;
+  provider: string | null;
+  layerType: string;
+  filePath: string;
+  fileSize: number;
+  createdAt: string;
+  tags?: string[];
+  printifyImageId?: string | null;
+  viewUrl: string | null;
+  is_approved?: boolean;
+  approvedAt?: string;
+}
+
+export interface AssetsResponse {
+  assets: Asset[];
+  total: number;
+  filtered: number;
+}
+
+export interface ApproveAssetResponse {
+  ok: boolean;
+  id: string;
+  is_approved: boolean;
+  approvedAt: string | null;
+}
+
 export interface ComposedPlacement {
   assetId: string;
   placement: string | PlacementValue;
@@ -371,4 +405,22 @@ export const api = {
     apiFetch<PublishUniformResponse>('/api/publish/uniform', { method: 'POST', body: req }),
   publishComposed: (req: PublishComposedRequest) =>
     apiFetch<PublishComposedResponse>('/api/publish/composed', { method: 'POST', body: req }),
+
+  // --- Asset approval (Fix 1: server-side approved queue) ---
+  getAssets: (params?: { approved?: boolean; layerType?: string; niche?: string; subNiche?: string; mode?: string; limit?: number }) => {
+    const qs = new URLSearchParams();
+    if (params?.approved !== undefined) qs.set('approved', String(params.approved));
+    if (params?.layerType) qs.set('layerType', params.layerType);
+    if (params?.niche) qs.set('niche', params.niche);
+    if (params?.subNiche) qs.set('subNiche', params.subNiche);
+    if (params?.mode) qs.set('mode', params.mode);
+    if (params?.limit !== undefined) qs.set('limit', String(params.limit));
+    const suffix = qs.toString() ? `?${qs.toString()}` : '';
+    return apiFetch<AssetsResponse>(`/api/assets${suffix}`);
+  },
+  approveAsset: (assetId: string, approved: boolean) =>
+    apiFetch<ApproveAssetResponse>(`/api/assets/${encodeURIComponent(assetId)}/approve`, {
+      method: 'POST',
+      body: { approved },
+    }),
 };

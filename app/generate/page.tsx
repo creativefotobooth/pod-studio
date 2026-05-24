@@ -2,7 +2,7 @@
 
 import { ChangeEvent, useEffect, useMemo, useState } from 'react';
 import { Header } from '@/components/Header';
-import { api, type DesignMode, type JobStatus, type Logo, type PlacementValue, type ProductType, type Provider, type PublishResponse, type TitleLibraryResponse } from '@/lib/api';
+import { api, type Asset, type DesignMode, type JobStatus, type Logo, type PlacementValue, type ProductType, type Provider, type PublishResponse, type TitleLibraryResponse } from '@/lib/api';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -439,6 +439,7 @@ export default function GeneratePage() {
     const next = [nextItem, ...approved.filter((item) => item.jobId !== job.jobId)];
     setApproved(next);
     saveApproved(next);
+    syncApprovalToServer(job.jobId, true);
     clearCurrentJob();
     setJob(null);
     setJobId(null);
@@ -516,6 +517,7 @@ export default function GeneratePage() {
       const next = [nextItem, ...approved.filter((item) => item.jobId !== response.jobId)];
       setApproved(next);
       saveApproved(next);
+      syncApprovalToServer(response.jobId, true);
       setUploadFile(null);
       setUploadTitle('');
       toast.success('Uploaded design added to Approved queue');
@@ -626,6 +628,7 @@ export default function GeneratePage() {
       const nextApproved = approved.filter((a) => a.jobId !== deleteTarget.jobId);
       setApproved(nextApproved);
       saveApproved(nextApproved);
+      syncApprovalToServer(deleteTarget.jobId, false);
 
       if (published[deleteTarget.jobId]) {
         const nextPublished = { ...published };
@@ -760,6 +763,58 @@ export default function GeneratePage() {
   useEffect(() => {
     api.getLogos().then((res) => setLogos(res.logos || [])).catch(() => {});
   }, []);
+
+  // Fix 1: Load server-approved designs on mount and merge into local queue.
+  // Server is the new source of truth; localStorage stays as cache for offline / pre-Fix1 items.
+  useEffect(() => {
+    api.getAssets({ approved: true, limit: 500 })
+      .then((res) => {
+        const serverApproved: Asset[] = res.assets || [];
+        if (serverApproved.length === 0) return;
+        // Merge server items into local queue, dedup by jobId
+        setApproved(prevApproved => {
+          const localByJobId = new Map(prevApproved.map(a => [a.jobId, a]));
+          for (const asset of serverApproved) {
+            if (!asset.jobId || localByJobId.has(asset.jobId)) continue;
+            // Synthesize ApprovedDesign from server asset record
+            localByJobId.set(asset.jobId, {
+              jobId: asset.jobId,
+              title: asset.title || asset.slug || 'Untitled',
+              niche: asset.niche || 'general',
+              subNiche: asset.subNiche || undefined,
+              type: (asset.productType as ProductType) || 'tee',
+              layout: 'centered-badge',
+              mode: (asset.mode as DesignMode) || undefined,
+              score: undefined,
+              approvedAt: asset.approvedAt || asset.createdAt,
+              source: 'generate',
+            });
+          }
+          const merged = Array.from(localByJobId.values()).sort(
+            (a, b) => (b.approvedAt || '').localeCompare(a.approvedAt || '')
+          );
+          saveApproved(merged);
+          return merged;
+        });
+      })
+      .catch(err => console.warn('Server-approved load failed (using local only):', err.message));
+  }, []);
+
+  // Fix 1: Server-sync helper. Fire-and-forget — UI doesn't wait.
+  // Looks up the composite asset for a jobId, then toggles its approval server-side.
+  async function syncApprovalToServer(jobId: string, approved: boolean) {
+    try {
+      const res = await api.getAssets({ layerType: 'composite', limit: 500 });
+      const asset = (res.assets || []).find(a => a.jobId === jobId);
+      if (!asset) {
+        console.warn(`[approval-sync] No composite asset found for jobId ${jobId} — skipping server sync`);
+        return;
+      }
+      await api.approveAsset(asset.id, approved);
+    } catch (err) {
+      console.warn('[approval-sync] Server sync failed (local state preserved):', (err as Error).message);
+    }
+  }
 
   // Logo upload handler
   const handleLogoUpload = async () => {

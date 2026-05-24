@@ -785,7 +785,7 @@ export default function GeneratePage() {
               type: (asset.productType as ProductType) || 'tee',
               layout: 'centered-badge',
               mode: (asset.mode as DesignMode) || undefined,
-              score: undefined,
+              score: null,
               approvedAt: asset.approvedAt || asset.createdAt,
               source: 'generate',
             });

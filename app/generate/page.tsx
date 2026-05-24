@@ -783,7 +783,9 @@ export default function GeneratePage() {
     }
   };
 
-  // Uniform publish handler
+  // Uniform publish handler — uses /api/publish/composed (single-placement entry).
+  // The composed endpoint is the future unified publish surface; uniform was a
+  // single-placement special case so this is a backwards-compatible swap.
   const handleUniformPublish = async () => {
     if (!selectedLogoId) { toast.error('Select a logo first'); return; }
     if (uniformChannels.length === 0) { toast.error('Pick at least one channel'); return; }
@@ -792,14 +794,19 @@ export default function GeneratePage() {
     setUniformPublishing(true);
     setUniformResult(null);
     try {
-      const result = await api.publishUniform({
-        logoId: selectedLogoId,
+      const logo = logos.find(l => l.id === selectedLogoId);
+      const result = await api.publishComposed({
+        blueprintId: 12, // Bella+Canvas 3001 (tee)
         productType: 'tee',
         priceGbp: price,
         colours: uniformColours.length > 0 ? uniformColours : undefined,
         channels: uniformChannels,
-        placement: uniformPlacement,
-        title: uniformTitle.trim() || undefined,
+        title: uniformTitle.trim() || `${logo?.name || 'Logo'} Uniform Tee`,
+        description: `Custom uniform tee featuring the ${logo?.name || 'logo'} design.`,
+        placements: [
+          { assetId: selectedLogoId, placement: uniformPlacement },
+        ],
+        tags: ['uniform', 'logo', ...(logo?.tags || [])],
       });
       setUniformResult(result);
       if (result.ok) {

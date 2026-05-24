@@ -290,6 +290,29 @@ export interface PublishUniformResponse extends PublishResponse {
   placement: { x: number; y: number; scale: number; source: string };
 }
 
+export interface ComposedPlacement {
+  assetId: string;
+  placement: string | PlacementValue;
+}
+
+export interface PublishComposedRequest {
+  blueprintId: number;
+  productType: ProductType;
+  priceGbp: number;
+  colours?: string[];
+  sizes?: string[];
+  channels?: Array<'shopify' | 'etsy'>;
+  title?: string;
+  description?: string;
+  tags?: string[];
+  placements: ComposedPlacement[];
+}
+
+export interface PublishComposedResponse extends PublishResponse {
+  placementCount: number;
+  positions: string[];
+}
+
 export const api = {
   health: () => apiFetch<{ ok: boolean; version: string; uptime: number }>('/health'),
   getProducts: () => apiFetch<Product[]>('/api/products'),
@@ -346,4 +369,6 @@ export const api = {
     apiFetch<{ ok: boolean; id: string }>(`/api/logos/${encodeURIComponent(logoId)}`, { method: 'DELETE' }),
   publishUniform: (req: PublishUniformRequest) =>
     apiFetch<PublishUniformResponse>('/api/publish/uniform', { method: 'POST', body: req }),
+  publishComposed: (req: PublishComposedRequest) =>
+    apiFetch<PublishComposedResponse>('/api/publish/composed', { method: 'POST', body: req }),
 };

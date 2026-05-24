@@ -141,6 +141,21 @@ export default function GeneratePage() {
   const [uniformResult, setUniformResult] = useState<PublishResponse | null>(null);
   const [uniformChannels, setUniformChannels] = useState<('shopify' | 'etsy')[]>(['shopify', 'etsy']);
 
+  // Multi-placement state (Wave 2)
+  type ExtraPlacement = {
+    id: string;                                              // local id (uuid-ish)
+    assetId: string | null;                                  // chosen asset (null until user picks)
+    position: 'front' | 'back' | 'left_sleeve' | 'right_sleeve' | 'neck';
+    placement: PlacementValue | string;                      // preset name or manual coords
+  };
+  const [extraPlacements, setExtraPlacements] = useState<ExtraPlacement[]>([]);
+  // Asset picker modal — which placement is the user choosing an asset for?
+  const [assetPickerOpenForId, setAssetPickerOpenForId] = useState<string | null>(null);
+  const [allAssets, setAllAssets] = useState<Array<{ id: string; title: string | null; slug: string; layerType: string; viewUrl: string; niche?: string | null; subNiche?: string | null }>>([]);
+  const [allAssetsLoading, setAllAssetsLoading] = useState(false);
+  const [assetSearch, setAssetSearch] = useState('');
+  const [assetFilterType, setAssetFilterType] = useState<'all' | 'composite' | 'logo' | 'ai' | 'obj' | 'text-ai'>('all');
+
   // When user switches to local provider, fall back from text-overlay-ai
   // (which is not supported on local — too slow on the Mac Mini).
   useEffect(() => {
@@ -783,6 +798,100 @@ export default function GeneratePage() {
     }
   };
 
+  // ============================================================================
+  // Multi-placement helpers (Wave 2)
+  // ============================================================================
+
+  // Load all assets for the asset picker. Hits /api/assets which returns the
+  // full index. Filters out the currently-selected logo from the list so the
+  // user doesn't accidentally pick it again for an extra placement.
+  const loadAvailableAssets = async () => {
+    setAllAssetsLoading(true);
+    try {
+      const res = await fetch('/api/proxy/api/assets');
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = await res.json();
+      const assets = (data.assets || []).map((a: { id: string; title: string | null; slug: string; layerType: string; viewUrl: string; niche?: string | null; subNiche?: string | null }) => ({
+        id: a.id,
+        title: a.title,
+        slug: a.slug,
+        layerType: a.layerType,
+        viewUrl: a.viewUrl,
+        niche: a.niche,
+        subNiche: a.subNiche,
+      }));
+      setAllAssets(assets);
+    } catch (err) {
+      toast.error('Failed to load assets: ' + (err as Error).message);
+    } finally {
+      setAllAssetsLoading(false);
+    }
+  };
+
+  // Available positions on a tee (hardcoded for v1; future: discover per blueprint)
+  const TEE_POSITIONS: Array<{ value: ExtraPlacement['position']; label: string }> = [
+    { value: 'front', label: 'Front' },
+    { value: 'back', label: 'Back' },
+    { value: 'left_sleeve', label: 'Left Sleeve' },
+    { value: 'right_sleeve', label: 'Right Sleeve' },
+    { value: 'neck', label: 'Neck Label' },
+  ];
+
+  // Default preset name per position — used when adding a new placement
+  const defaultPresetForPosition: Record<ExtraPlacement['position'], string> = {
+    'front': 'centered-badge',
+    'back': 'back-center',
+    'left_sleeve': 'left-sleeve-band',
+    'right_sleeve': 'right-sleeve-band',
+    'neck': 'neck-tag',
+  };
+
+  // Add a new placement entry. The user picks the position; asset starts unset.
+  const addPlacement = (position: ExtraPlacement['position']) => {
+    if (extraPlacements.length >= 9) {
+      // 9 extras + 1 logo = 10 total (server cap)
+      toast.error('Maximum 10 placements per product');
+      return;
+    }
+    const newEntry: ExtraPlacement = {
+      id: 'placement_' + Math.random().toString(36).slice(2, 10),
+      assetId: null,
+      position,
+      placement: defaultPresetForPosition[position],
+    };
+    setExtraPlacements([...extraPlacements, newEntry]);
+  };
+
+  // Remove a placement entry by local id
+  const removePlacement = (id: string) => {
+    setExtraPlacements(extraPlacements.filter(p => p.id !== id));
+  };
+
+  // Update the placement coords of an entry
+  const updatePlacementCoords = (id: string, placement: PlacementValue | string) => {
+    setExtraPlacements(extraPlacements.map(p => p.id === id ? { ...p, placement } : p));
+  };
+
+  // Update the asset of an entry (called from asset picker modal on selection)
+  const updatePlacementAsset = (id: string, assetId: string) => {
+    setExtraPlacements(extraPlacements.map(p => p.id === id ? { ...p, assetId } : p));
+    setAssetPickerOpenForId(null);
+  };
+
+  // Open the asset picker modal for a given placement entry
+  const openAssetPicker = (placementId: string) => {
+    setAssetPickerOpenForId(placementId);
+    if (allAssets.length === 0) loadAvailableAssets();
+  };
+
+  // Filtered assets shown in the picker modal
+  const filteredAssets = allAssets.filter(a => {
+    if (assetFilterType !== 'all' && a.layerType !== assetFilterType) return false;
+    if (assetSearch.trim() === '') return true;
+    const q = assetSearch.toLowerCase();
+    return (a.title || '').toLowerCase().includes(q) || (a.slug || '').toLowerCase().includes(q) || (a.niche || '').toLowerCase().includes(q);
+  });
+
   // Uniform publish handler — uses /api/publish/composed (single-placement entry).
   // The composed endpoint is the future unified publish surface; uniform was a
   // single-placement special case so this is a backwards-compatible swap.
@@ -791,6 +900,11 @@ export default function GeneratePage() {
     if (uniformChannels.length === 0) { toast.error('Pick at least one channel'); return; }
     const price = parseFloat(uniformPrice);
     if (isNaN(price) || price <= 0) { toast.error('Enter a valid price'); return; }
+    const unfilledExtras = extraPlacements.filter(p => p.assetId === null);
+    if (unfilledExtras.length > 0) {
+      toast.error(`${unfilledExtras.length} placement${unfilledExtras.length === 1 ? '' : 's'} need${unfilledExtras.length === 1 ? 's' : ''} an asset selected (or remove)`);
+      return;
+    }
     setUniformPublishing(true);
     setUniformResult(null);
     try {
@@ -805,6 +919,10 @@ export default function GeneratePage() {
         description: `Custom uniform tee featuring the ${logo?.name || 'logo'} design.`,
         placements: [
           { assetId: selectedLogoId, placement: uniformPlacement },
+          // Append any extra placements the user added (filter out ones with no asset chosen)
+          ...extraPlacements
+            .filter(p => p.assetId !== null)
+            .map(p => ({ assetId: p.assetId as string, placement: p.placement })),
         ],
         tags: ['uniform', 'logo', ...(logo?.tags || [])],
       });
@@ -1470,6 +1588,97 @@ export default function GeneratePage() {
                     />
                   </div>
 
+                  {/* ============ Extra placements (Wave 2 multi-placement) ============ */}
+                  {extraPlacements.length > 0 && (
+                    <div className="space-y-3 rounded-md border p-3 bg-muted/30">
+                      <div className="text-sm font-medium">Additional placements ({extraPlacements.length})</div>
+                      {extraPlacements.map((ep, idx) => {
+                        const positionLabel = TEE_POSITIONS.find(p => p.value === ep.position)?.label || ep.position;
+                        const chosenAsset = ep.assetId ? allAssets.find(a => a.id === ep.assetId) : null;
+                        return (
+                          <div key={ep.id} className="space-y-2 rounded border p-3 bg-background">
+                            <div className="flex items-start justify-between gap-2">
+                              <div>
+                                <div className="text-sm font-medium">#{idx + 2}: {positionLabel}</div>
+                                <div className="text-xs text-muted-foreground">{ep.assetId ? (chosenAsset?.title || chosenAsset?.slug || 'Asset chosen') : 'No asset chosen yet'}</div>
+                              </div>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => removePlacement(ep.id)}
+                                disabled={uniformPublishing}
+                              >
+                                <X className="h-4 w-4" />
+                              </Button>
+                            </div>
+                            {/* Asset chosen — show preview */}
+                            {ep.assetId && (
+                              <div className="flex items-center gap-3">
+                                <div className="h-16 w-16 overflow-hidden rounded border bg-white flex items-center justify-center">
+                                  {chosenAsset ? (
+                                    <img src={`/api/proxy${chosenAsset.viewUrl}`} alt={chosenAsset.title || 'asset'} className="max-h-full max-w-full object-contain" />
+                                  ) : (
+                                    <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+                                  )}
+                                </div>
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  onClick={() => openAssetPicker(ep.id)}
+                                  disabled={uniformPublishing}
+                                >
+                                  Change asset
+                                </Button>
+                              </div>
+                            )}
+                            {/* No asset — show big picker button */}
+                            {!ep.assetId && (
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                className="w-full"
+                                onClick={() => openAssetPicker(ep.id)}
+                                disabled={uniformPublishing}
+                              >
+                                Choose asset
+                              </Button>
+                            )}
+                            {/* Placement picker for this entry */}
+                            <PlacementPicker
+                              subNiche={ep.position}
+                              value={typeof ep.placement === 'string' ? { preset: ep.placement } : ep.placement}
+                              onChange={(v) => updatePlacementCoords(ep.id, v)}
+                            />
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+
+                  {/* Add placement button — opens a position picker */}
+                  <div className="space-y-2">
+                    <Label>Add another placement</Label>
+                    <div className="flex gap-2 flex-wrap">
+                      {TEE_POSITIONS.map((pos) => {
+                        const disabled = uniformPublishing || extraPlacements.length >= 9;
+                        return (
+                          <Button
+                            key={pos.value}
+                            variant="outline"
+                            size="sm"
+                            onClick={() => addPlacement(pos.value)}
+                            disabled={disabled}
+                          >
+                            + {pos.label}
+                          </Button>
+                        );
+                      })}
+                    </div>
+                    {extraPlacements.length >= 9 && (
+                      <p className="text-xs text-muted-foreground">Maximum 10 placements reached</p>
+                    )}
+                  </div>
+
                   <div className="space-y-2">
                     <Label>Price (£)</Label>
                     <Input
@@ -1515,6 +1724,84 @@ export default function GeneratePage() {
           </TabsContent>
         </Tabs>
       </main>
+
+      {/* Asset picker modal (Wave 2 multi-placement) */}
+      {assetPickerOpenForId && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
+          <div className="w-full max-w-3xl rounded-xl border bg-background p-6 shadow-xl max-h-[90vh] flex flex-col">
+            <div className="flex items-start justify-between gap-3 mb-4">
+              <div>
+                <h2 className="text-xl font-semibold">Choose an asset</h2>
+                <p className="mt-1 text-sm text-muted-foreground">Pick any asset from your library to add to this placement.</p>
+              </div>
+              <Button variant="ghost" size="sm" onClick={() => setAssetPickerOpenForId(null)}>
+                <X className="h-4 w-4" />
+              </Button>
+            </div>
+
+            {/* Search + filter */}
+            <div className="space-y-3 mb-4">
+              <Input
+                placeholder="Search by title, slug, or niche..."
+                value={assetSearch}
+                onChange={(e) => setAssetSearch(e.target.value)}
+              />
+              <div className="flex gap-2 flex-wrap">
+                {(['all', 'composite', 'logo', 'ai', 'obj', 'text-ai'] as const).map((type) => (
+                  <Button
+                    key={type}
+                    variant={assetFilterType === type ? 'default' : 'outline'}
+                    size="sm"
+                    onClick={() => setAssetFilterType(type)}
+                  >
+                    {type === 'all' ? 'All' : type === 'composite' ? 'Composites' : type === 'logo' ? 'Logos' : type === 'ai' ? 'AI Layer' : type === 'obj' ? 'Object' : 'Text AI'}
+                  </Button>
+                ))}
+              </div>
+              <p className="text-xs text-muted-foreground">{filteredAssets.length} asset{filteredAssets.length === 1 ? '' : 's'} matching</p>
+            </div>
+
+            {/* Asset grid */}
+            <div className="flex-1 overflow-y-auto -mx-2 px-2">
+              {allAssetsLoading && (
+                <div className="text-center text-sm text-muted-foreground p-6">
+                  <Loader2 className="mx-auto h-6 w-6 animate-spin mb-2" />
+                  Loading assets...
+                </div>
+              )}
+              {!allAssetsLoading && filteredAssets.length === 0 && (
+                <div className="rounded-lg border border-dashed p-8 text-center text-sm text-muted-foreground">
+                  No assets match these filters.
+                </div>
+              )}
+              {!allAssetsLoading && filteredAssets.length > 0 && (
+                <div className="grid gap-3 grid-cols-2 md:grid-cols-3 lg:grid-cols-4">
+                  {filteredAssets.slice(0, 40).map((a) => (
+                    <button
+                      key={a.id}
+                      type="button"
+                      onClick={() => updatePlacementAsset(assetPickerOpenForId, a.id)}
+                      className="rounded-lg border p-3 hover:bg-accent text-left transition"
+                    >
+                      <div className="aspect-square overflow-hidden rounded bg-white flex items-center justify-center mb-2">
+                        <img src={`/api/proxy${a.viewUrl}`} alt={a.title || a.slug} className="max-w-full max-h-full object-contain" />
+                      </div>
+                      <div className="text-xs font-medium truncate">{a.title || a.slug}</div>
+                      <div className="flex gap-1 flex-wrap mt-1">
+                        <Badge variant="outline" className="text-[10px]">{a.layerType}</Badge>
+                        {a.niche && <Badge variant="outline" className="text-[10px]">{a.niche}</Badge>}
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              )}
+              {!allAssetsLoading && filteredAssets.length > 40 && (
+                <p className="text-xs text-muted-foreground mt-3 text-center">Showing first 40. Refine your search to see more.</p>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
 
       {editTarget && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">

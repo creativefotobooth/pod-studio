@@ -156,6 +156,15 @@ export default function GeneratePage() {
   const [assetSearch, setAssetSearch] = useState('');
   const [assetFilterType, setAssetFilterType] = useState<'all' | 'composite' | 'logo' | 'ai' | 'obj' | 'text-ai'>('all');
 
+  // Bulk-approve UI state (Add from library)
+  const [libraryOpen, setLibraryOpen] = useState(false);
+  const [libraryAssets, setLibraryAssets] = useState<Asset[]>([]);
+  const [libraryLoading, setLibraryLoading] = useState(false);
+  const [librarySearch, setLibrarySearch] = useState('');
+  const [libraryNicheFilter, setLibraryNicheFilter] = useState<string>('all');
+  const [libraryHideApproved, setLibraryHideApproved] = useState(true);
+  const [librarySaving, setLibrarySaving] = useState<Set<string>>(new Set());
+
   // When user switches to local provider, fall back from text-overlay-ai
   // (which is not supported on local — too slow on the Mac Mini).
   useEffect(() => {
@@ -951,6 +960,76 @@ export default function GeneratePage() {
     return (a.title || '').toLowerCase().includes(q) || (a.slug || '').toLowerCase().includes(q) || (a.niche || '').toLowerCase().includes(q);
   });
 
+  // Bulk-approve helpers (Add from library)
+  const loadLibraryAssets = async () => {
+    setLibraryLoading(true);
+    try {
+      const res = await api.getAssets({ layerType: 'composite', limit: 500 });
+      // Defense-in-depth: filter composite-only on client (same defensive pattern as Fix 1b)
+      const composites = (res.assets || []).filter(a => a.layerType === 'composite');
+      // Sort newest first
+      composites.sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || ''));
+      setLibraryAssets(composites);
+    } catch (err) {
+      toast.error('Failed to load library: ' + (err as Error).message);
+    } finally {
+      setLibraryLoading(false);
+    }
+  };
+
+  const handleLibraryApprove = async (asset: Asset) => {
+    if (!asset.jobId) { toast.error('Asset has no jobId — cannot approve'); return; }
+    setLibrarySaving(prev => new Set(prev).add(asset.id));
+    try {
+      await api.approveAsset(asset.id, true);
+      // Add to local approved queue immediately for snappy UI
+      const newEntry: ApprovedDesign = {
+        jobId: asset.jobId,
+        title: asset.title || asset.slug || 'Untitled',
+        niche: asset.niche || 'general',
+        subNiche: asset.subNiche || undefined,
+        type: (asset.productType as ProductType) || 'tee',
+        layout: 'centered-badge',
+        mode: (asset.mode as DesignMode) || undefined,
+        score: null,
+        approvedAt: new Date().toISOString(),
+        source: 'generate',
+      };
+      const next = [newEntry, ...approved.filter(a => a.jobId !== asset.jobId)];
+      setApproved(next);
+      saveApproved(next);
+      // Mark this asset as approved in local library state too (for hide-approved filter)
+      setLibraryAssets(prev => prev.map(a => a.id === asset.id ? { ...a, is_approved: true } : a));
+      toast.success(`Approved: ${asset.title || asset.slug}`);
+    } catch (err) {
+      toast.error('Approve failed: ' + (err as Error).message);
+    } finally {
+      setLibrarySaving(prev => {
+        const next = new Set(prev);
+        next.delete(asset.id);
+        return next;
+      });
+    }
+  };
+
+  // Compute the available niches for the filter dropdown
+  const libraryNiches = Array.from(new Set(libraryAssets.map(a => a.niche).filter(Boolean))).sort() as string[];
+
+  // Compute the filtered list
+  const libraryFiltered = libraryAssets.filter(a => {
+    if (libraryHideApproved && a.is_approved === true) return false;
+    if (libraryNicheFilter !== 'all' && a.niche !== libraryNicheFilter) return false;
+    if (librarySearch.trim() === '') return true;
+    const q = librarySearch.toLowerCase();
+    return (a.title || '').toLowerCase().includes(q) || (a.slug || '').toLowerCase().includes(q);
+  });
+
+  // Auto-load library when first opened
+  useEffect(() => {
+    if (libraryOpen && libraryAssets.length === 0) loadLibraryAssets();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [libraryOpen]);
+
   // Uniform publish handler — uses /api/publish/composed (single-placement entry).
   // The composed endpoint is the future unified publish surface; uniform was a
   // single-placement special case so this is a backwards-compatible swap.
@@ -1389,6 +1468,126 @@ export default function GeneratePage() {
           </TabsContent>
 
           <TabsContent value="queue" className="mt-6 space-y-6">
+            {/* ============ Bulk-approve (Add from library) ============ */}
+            <Card>
+              <CardHeader>
+                <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+                  <div>
+                    <CardTitle className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setLibraryOpen(!libraryOpen)}
+                        className="text-left hover:underline"
+                      >
+                        Add from library {libraryOpen ? '▼' : '▶'}
+                      </button>
+                    </CardTitle>
+                    <CardDescription>
+                      Approve previously-generated designs to add them to the queue.
+                    </CardDescription>
+                  </div>
+                  {libraryOpen && libraryAssets.length > 0 && (
+                    <div className="text-sm text-muted-foreground">
+                      {libraryFiltered.length} of {libraryAssets.length}
+                    </div>
+                  )}
+                </div>
+              </CardHeader>
+              {libraryOpen && (
+                <CardContent className="space-y-4">
+                  {/* Filters */}
+                  <div className="grid gap-2 md:grid-cols-3">
+                    <Input
+                      placeholder="Search title or slug..."
+                      value={librarySearch}
+                      onChange={(e) => setLibrarySearch(e.target.value)}
+                    />
+                    <select
+                      className="rounded-md border bg-background px-3 py-2 text-sm"
+                      value={libraryNicheFilter}
+                      onChange={(e) => setLibraryNicheFilter(e.target.value)}
+                    >
+                      <option value="all">All niches</option>
+                      {libraryNiches.map(n => (
+                        <option key={n} value={n}>{n}</option>
+                      ))}
+                    </select>
+                    <label className="flex items-center gap-2 text-sm">
+                      <input
+                        type="checkbox"
+                        checked={libraryHideApproved}
+                        onChange={(e) => setLibraryHideApproved(e.target.checked)}
+                      />
+                      Hide already approved
+                    </label>
+                  </div>
+
+                  {libraryLoading && (
+                    <div className="text-center text-sm text-muted-foreground p-6">
+                      <Loader2 className="mx-auto h-6 w-6 animate-spin mb-2" />
+                      Loading library...
+                    </div>
+                  )}
+
+                  {!libraryLoading && libraryFiltered.length === 0 && (
+                    <div className="rounded-lg border border-dashed p-8 text-center text-sm text-muted-foreground">
+                      {libraryAssets.length === 0
+                        ? 'No designs in library yet.'
+                        : 'No designs match these filters.'}
+                    </div>
+                  )}
+
+                  {!libraryLoading && libraryFiltered.length > 0 && (
+                    <div className="grid gap-3 grid-cols-2 md:grid-cols-3 lg:grid-cols-4">
+                      {libraryFiltered.slice(0, 60).map((asset) => {
+                        const saving = librarySaving.has(asset.id);
+                        const alreadyApproved = asset.is_approved === true;
+                        return (
+                          <div key={asset.id} className="rounded-lg border p-3 space-y-2">
+                            <div className="aspect-square overflow-hidden rounded bg-white flex items-center justify-center">
+                              {asset.viewUrl ? (
+                                <img
+                                  src={`/api/proxy${asset.viewUrl}`}
+                                  alt={asset.title || asset.slug}
+                                  className="max-w-full max-h-full object-contain"
+                                />
+                              ) : (
+                                <div className="text-xs text-muted-foreground">No preview</div>
+                              )}
+                            </div>
+                            <div className="text-xs font-medium truncate" title={asset.title || asset.slug}>
+                              {asset.title || asset.slug}
+                            </div>
+                            <div className="flex gap-1 flex-wrap">
+                              {asset.niche && <Badge variant="outline" className="text-[10px]">{asset.niche}</Badge>}
+                              {asset.mode && <Badge variant="outline" className="text-[10px]">{asset.mode}</Badge>}
+                              {alreadyApproved && <Badge variant="default" className="text-[10px]">approved</Badge>}
+                            </div>
+                            <Button
+                              size="sm"
+                              variant={alreadyApproved ? 'outline' : 'default'}
+                              className="w-full"
+                              onClick={() => handleLibraryApprove(asset)}
+                              disabled={saving || alreadyApproved}
+                            >
+                              {saving ? <><Loader2 className="mr-2 h-3 w-3 animate-spin" /> Approving</> : alreadyApproved ? 'Approved' : 'Approve'}
+                            </Button>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+
+                  {!libraryLoading && libraryFiltered.length > 60 && (
+                    <p className="text-xs text-muted-foreground text-center">
+                      Showing first 60. Refine filters to see more.
+                    </p>
+                  )}
+                </CardContent>
+              )}
+            </Card>
+
+            {/* ============ Existing approved queue ============ */}
             {approved.length === 0 ? (
               <Card>
                 <CardHeader>

@@ -764,40 +764,44 @@ export default function GeneratePage() {
     api.getLogos().then((res) => setLogos(res.logos || [])).catch(() => {});
   }, []);
 
-  // Fix 1: Load server-approved designs on mount and merge into local queue.
-  // Server is the new source of truth; localStorage stays as cache for offline / pre-Fix1 items.
+  // Fix 1: Server is the ONLY source of truth for the approved queue.
+  // Client-side filter as defense-in-depth in case the proxy/backend doesn't honor ?approved=true.
+  // localStorage is rebuilt from server data on mount. Items not on server-approved are dropped.
   useEffect(() => {
     api.getAssets({ approved: true, limit: 500 })
       .then((res) => {
-        const serverApproved: Asset[] = res.assets || [];
-        if (serverApproved.length === 0) return;
-        // Merge server items into local queue, dedup by jobId
-        setApproved(prevApproved => {
-          const localByJobId = new Map(prevApproved.map(a => [a.jobId, a]));
-          for (const asset of serverApproved) {
-            if (!asset.jobId || localByJobId.has(asset.jobId)) continue;
-            // Synthesize ApprovedDesign from server asset record
-            localByJobId.set(asset.jobId, {
-              jobId: asset.jobId,
-              title: asset.title || asset.slug || 'Untitled',
-              niche: asset.niche || 'general',
-              subNiche: asset.subNiche || undefined,
-              type: (asset.productType as ProductType) || 'tee',
-              layout: 'centered-badge',
-              mode: (asset.mode as DesignMode) || undefined,
-              score: null,
-              approvedAt: asset.approvedAt || asset.createdAt,
-              source: 'generate',
-            });
-          }
-          const merged = Array.from(localByJobId.values()).sort(
-            (a, b) => (b.approvedAt || '').localeCompare(a.approvedAt || '')
-          );
-          saveApproved(merged);
-          return merged;
-        });
+        const allReturned: Asset[] = res.assets || [];
+        // Client-side filter — only keep records explicitly flagged is_approved === true.
+        // This protects against any case where the backend returns unfiltered data.
+        const serverApproved = allReturned.filter(a => a.is_approved === true && a.layerType === 'composite');
+        // Rebuild local queue from server only. Dedup by jobId.
+        const byJobId = new Map<string, ApprovedDesign>();
+        for (const asset of serverApproved) {
+          if (!asset.jobId) continue;
+          if (byJobId.has(asset.jobId)) continue;
+          byJobId.set(asset.jobId, {
+            jobId: asset.jobId,
+            title: asset.title || asset.slug || 'Untitled',
+            niche: asset.niche || 'general',
+            subNiche: asset.subNiche || undefined,
+            type: (asset.productType as ProductType) || 'tee',
+            layout: 'centered-badge',
+            mode: (asset.mode as DesignMode) || undefined,
+            score: null,
+            approvedAt: asset.approvedAt || asset.createdAt,
+            source: 'generate',
+          });
+        }
+        const rebuilt = Array.from(byJobId.values()).sort(
+          (a, b) => (b.approvedAt || '').localeCompare(a.approvedAt || '')
+        );
+        console.log(`[approval-load] Server returned ${allReturned.length} records, ${serverApproved.length} truly approved, ${rebuilt.length} unique jobs`);
+        setApproved(rebuilt);
+        saveApproved(rebuilt);
       })
-      .catch(err => console.warn('Server-approved load failed (using local only):', err.message));
+      .catch(err => {
+        console.warn('Server-approved load failed (keeping local queue):', err.message);
+      });
   }, []);
 
   // Fix 1: Server-sync helper. Fire-and-forget — UI doesn't wait.

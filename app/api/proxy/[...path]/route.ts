@@ -20,7 +20,7 @@ async function proxyRequest(
 
   const { path } = await params;
   const targetPath = '/' + path.join('/');
-  const targetUrl = `${VPS_API_URL}${targetPath}`;
+  const targetUrl = `${VPS_API_URL}${targetPath}${request.nextUrl.search}`;
 
   const method = request.method;
 

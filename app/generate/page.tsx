@@ -1012,6 +1012,62 @@ export default function GeneratePage() {
     }
   };
 
+  // Bulk-approve "all visible" handler — loops through filteredAssets that aren't already approved
+  const [bulkApproving, setBulkApproving] = useState(false);
+  const handleApproveAllVisible = async () => {
+    const targets = libraryFiltered.filter(a => a.is_approved !== true && a.jobId);
+    if (targets.length === 0) {
+      toast.error('Nothing to approve in the current filter');
+      return;
+    }
+    if (targets.length >= 5 && !confirm(`Approve ${targets.length} design${targets.length === 1 ? '' : 's'}?`)) {
+      return;
+    }
+    setBulkApproving(true);
+    const succeeded: typeof targets = [];
+    const failed: { id: string; title: string; error: string }[] = [];
+    for (const asset of targets) {
+      try {
+        await api.approveAsset(asset.id, true);
+        succeeded.push(asset);
+        // Update library state so the UI reflects approval as we go
+        setLibraryAssets(prev => prev.map(a => a.id === asset.id ? { ...a, is_approved: true } : a));
+      } catch (err) {
+        failed.push({ id: asset.id, title: asset.title || asset.slug || asset.id, error: (err as Error).message });
+      }
+    }
+    // Add all succeeded items to the approved queue at once
+    if (succeeded.length > 0) {
+      const newEntries: ApprovedDesign[] = succeeded.map(asset => ({
+        jobId: asset.jobId as string,
+        title: asset.title || asset.slug || 'Untitled',
+        niche: asset.niche || 'general',
+        subNiche: asset.subNiche || undefined,
+        type: (asset.productType as ProductType) || 'tee',
+        layout: 'centered-badge' as const,
+        mode: (asset.mode as DesignMode) || undefined,
+        score: null,
+        approvedAt: new Date().toISOString(),
+        source: 'generate' as const,
+      }));
+      const existingJobIds = new Set(approved.map(a => a.jobId));
+      const additions = newEntries.filter(e => !existingJobIds.has(e.jobId));
+      const next = [...additions, ...approved];
+      setApproved(next);
+      saveApproved(next);
+    }
+    setBulkApproving(false);
+    if (failed.length === 0) {
+      toast.success(`Approved ${succeeded.length} design${succeeded.length === 1 ? '' : 's'}`);
+    } else if (succeeded.length === 0) {
+      toast.error(`All ${failed.length} approvals failed`);
+      console.error('[bulk-approve] All failed:', failed);
+    } else {
+      toast.warning(`Approved ${succeeded.length}, ${failed.length} failed (see console)`);
+      console.warn('[bulk-approve] Partial failure:', failed);
+    }
+  };
+
   // Compute the available niches for the filter dropdown
   const libraryNiches = Array.from(new Set(libraryAssets.map(a => a.niche).filter(Boolean))).sort() as string[];
 
@@ -1487,8 +1543,27 @@ export default function GeneratePage() {
                     </CardDescription>
                   </div>
                   {libraryOpen && libraryAssets.length > 0 && (
-                    <div className="text-sm text-muted-foreground">
-                      {libraryFiltered.length} of {libraryAssets.length}
+                    <div className="flex items-center gap-3">
+                      <div className="text-sm text-muted-foreground">
+                        {libraryFiltered.length} of {libraryAssets.length}
+                      </div>
+                      {(() => {
+                        const unapprovedVisible = libraryFiltered.filter(a => a.is_approved !== true && a.jobId).length;
+                        return unapprovedVisible > 0 && (
+                          <Button
+                            size="sm"
+                            variant="default"
+                            onClick={handleApproveAllVisible}
+                            disabled={bulkApproving}
+                          >
+                            {bulkApproving ? (
+                              <><Loader2 className="mr-2 h-3 w-3 animate-spin" /> Approving {unapprovedVisible}...</>
+                            ) : (
+                              `Approve all visible (${unapprovedVisible})`
+                            )}
+                          </Button>
+                        );
+                      })()}
                     </div>
                   )}
                 </div>

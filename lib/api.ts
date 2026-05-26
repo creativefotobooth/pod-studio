@@ -399,6 +399,9 @@ export const api = {
   getLogos: () => apiFetch<LogosResponse>('/api/logos'),
   uploadLogo: (formData: FormData) =>
     apiFetchFormData<UploadLogoResponse>('/api/logos/upload', formData),
+
+  generateFromReference: (formData: FormData) =>
+    apiFetchFormData<GenerateResponse>('/api/generate/reference', formData),
   deleteLogo: (logoId: string) =>
     apiFetch<{ ok: boolean; id: string }>(`/api/logos/${encodeURIComponent(logoId)}`, { method: 'DELETE' }),
   publishUniform: (req: PublishUniformRequest) =>

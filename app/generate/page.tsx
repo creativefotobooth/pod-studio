@@ -203,6 +203,10 @@ export default function GeneratePage() {
   const [uploadSubNiche, setUploadSubNiche] = useState('');
   const [uploading, setUploading] = useState(false);
   const [referenceStrength, setReferenceStrength] = useState(50);
+  const [referenceProvider, setReferenceProvider] = useState<'fal-kontext' | 'local-img2img'>('fal-kontext');
+  const [referenceJobId, setReferenceJobId] = useState<string | null>(null);
+  const [referenceJobStatus, setReferenceJobStatus] = useState<'idle' | 'running' | 'done' | 'failed'>('idle');
+  const [referenceSubmitting, setReferenceSubmitting] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -537,8 +541,74 @@ export default function GeneratePage() {
     }
   }
 
-  function handleReferenceSubmit() {
-    toast.message('Reference-image generation coming soon — backend not yet implemented');
+  async function handleReferenceSubmit() {
+    if (!uploadFile || !uploadTitle.trim() || !uploadNiche) return;
+    setReferenceSubmitting(true);
+    setReferenceJobStatus('running');
+    setReferenceJobId(null);
+    try {
+      const fd = new FormData();
+      fd.append('file', uploadFile);
+      fd.append('title', uploadTitle.trim());
+      fd.append('niche', uploadNiche);
+      if (uploadSubNiche) fd.append('subNiche', uploadSubNiche);
+      fd.append('type', productType);
+      fd.append('provider', referenceProvider);
+
+      const startRes = await api.generateFromReference(fd);
+      setReferenceJobId(startRes.jobId);
+      toast.success(`Generation started (${referenceProvider === 'fal-kontext' ? '~30s' : '~3min'})`);
+
+      // Poll for completion. Max 5min to cover slow Mac Mini path.
+      const startedAt = Date.now();
+      const maxMs = 5 * 60 * 1000;
+      while (Date.now() - startedAt < maxMs) {
+        await new Promise(r => setTimeout(r, 2500));
+        let status;
+        try {
+          status = await api.getJob(startRes.jobId);
+        } catch (pollErr) {
+          console.warn('[ref-gen] poll error (will retry):', pollErr);
+          continue;
+        }
+        if (status.status === 'done') {
+          setReferenceJobStatus('done');
+          // Add to approved queue + sync to server (same pattern as generate flow)
+          const newItem: ApprovedDesign = {
+            jobId: startRes.jobId,
+            title: uploadTitle.trim(),
+            niche: uploadNiche,
+            subNiche: uploadSubNiche || undefined,
+            type: productType,
+            layout: 'centered-badge',
+            mode: 'reference-gen' as DesignMode,
+            score: null,
+            approvedAt: new Date().toISOString(),
+            source: 'generate',
+          };
+          const next = [newItem, ...approved.filter(a => a.jobId !== startRes.jobId)];
+          setApproved(next);
+          saveApproved(next);
+          syncApprovalToServer(startRes.jobId, true);
+          toast.success(`Done — ${uploadTitle.trim()} added to approved queue`);
+          break;
+        }
+        if (status.status === 'failed') {
+          setReferenceJobStatus('failed');
+          toast.error(`Generation failed: ${status.error || 'unknown error'}`);
+          break;
+        }
+      }
+      if (referenceJobStatus === 'running') {
+        toast.error('Generation timed out after 5 minutes');
+        setReferenceJobStatus('failed');
+      }
+    } catch (err) {
+      setReferenceJobStatus('failed');
+      toast.error(err instanceof Error ? err.message : 'Failed to start reference generation');
+    } finally {
+      setReferenceSubmitting(false);
+    }
   }
 
   function openPublish(item: ApprovedDesign) {
@@ -1502,12 +1572,51 @@ export default function GeneratePage() {
                       </div>
                     </div>
                     <div className="space-y-2">
+                      <Label>Generation provider</Label>
+                      <div className="grid grid-cols-2 gap-2">
+                        <Button
+                          type="button"
+                          variant={referenceProvider === 'fal-kontext' ? 'default' : 'outline'}
+                          onClick={() => setReferenceProvider('fal-kontext')}
+                          disabled={referenceSubmitting}
+                        >
+                          fal.ai Kontext (~30s)
+                        </Button>
+                        <Button
+                          type="button"
+                          variant={referenceProvider === 'local-img2img' ? 'default' : 'outline'}
+                          onClick={() => setReferenceProvider('local-img2img')}
+                          disabled={referenceSubmitting}
+                        >
+                          Mac Mini img2img (~3min)
+                        </Button>
+                      </div>
+                      <p className="text-xs text-muted-foreground">
+                        {referenceProvider === 'fal-kontext'
+                          ? 'Cloud generation, paid (~$0.04). Strong style transfer, fast.'
+                          : 'Local generation, free. Slower, follows reference structure more closely.'}
+                      </p>
+                    </div>
+                    <div className="space-y-2">
                       <Label>Reference strength: {referenceStrength}</Label>
                       <Input type="range" min="0" max="100" value={referenceStrength} onChange={(event) => setReferenceStrength(Number(event.target.value))} />
+                      <p className="text-xs text-muted-foreground">
+                        Note: this slider is currently advisory only — actual reference adherence is controlled by the provider.
+                      </p>
                     </div>
-                    <Button onClick={handleReferenceSubmit} disabled={!uploadFile || !uploadTitle.trim() || !uploadNiche}>
-                      Generate from reference
+                    <Button
+                      onClick={handleReferenceSubmit}
+                      disabled={!uploadFile || !uploadTitle.trim() || !uploadNiche || referenceSubmitting}
+                    >
+                      {referenceSubmitting
+                        ? (referenceJobStatus === 'running' ? `Generating with ${referenceProvider === 'fal-kontext' ? 'Kontext' : 'Mac Mini'}...` : 'Submitting...')
+                        : 'Generate from reference'}
                     </Button>
+                    {referenceJobId && (
+                      <p className="text-xs text-muted-foreground">
+                        Job: <code className="text-foreground">{referenceJobId}</code> — status: <span className={referenceJobStatus === 'done' ? 'text-green-600' : referenceJobStatus === 'failed' ? 'text-red-600' : 'text-foreground'}>{referenceJobStatus}</span>
+                      </p>
+                    )}
                   </div>
                   <div className="flex min-h-48 items-center justify-center overflow-hidden rounded-xl border bg-muted/40">
                     {uploadPreview ? (

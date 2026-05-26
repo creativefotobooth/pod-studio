@@ -45,7 +45,7 @@ export default function MockupPreview({
     let cancelled = false;
     let url: string | null = null;
     setLoading(true);
-    api.getJobImage(jobId, 'ai')
+    api.getJobImage(jobId, 'composite')
       .then((blob) => {
         if (cancelled) return;
         url = URL.createObjectURL(blob);

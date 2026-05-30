@@ -2437,13 +2437,19 @@ export default function GeneratePage() {
                 <ColourPicker selected={publishColours} onChange={setPublishColours} productType="tee" />
               </div>
 
-              <div className="space-y-2">
-                <PlacementPicker
-                  subNiche={publishTarget?.subNiche ? `${publishTarget.niche}-${publishTarget.subNiche}` : publishTarget?.niche || 'general'}
-                  value={publishPlacement}
-                  onChange={setPublishPlacement}
-                />
-              </div>
+              <details className="rounded-lg border p-3">
+                <summary className="cursor-pointer text-sm font-medium select-none">
+                  Print placement
+                  <span className="ml-2 text-xs text-muted-foreground">(advanced — defaults work for most designs)</span>
+                </summary>
+                <div className="mt-3">
+                  <PlacementPicker
+                    subNiche={publishTarget?.subNiche ? `${publishTarget.niche}-${publishTarget.subNiche}` : publishTarget?.niche || 'general'}
+                    value={publishPlacement}
+                    onChange={setPublishPlacement}
+                  />
+                </div>
+              </details>
 
               <div className="space-y-2">
                 <Label>Price (£)</Label>

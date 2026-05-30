@@ -1368,12 +1368,12 @@ export default function GeneratePage() {
                 <div className="space-y-2">
                   <Label>Design mode</Label>
                   <Tabs value={designMode} onValueChange={(value) => value && setDesignMode(value as DesignMode)}>
-                    <TabsList className={`grid w-full grid-cols-2 ${provider === 'fal' ? 'md:grid-cols-4' : 'md:grid-cols-3'} h-auto`}>
-                      <TabsTrigger value="text-image-ai">Text only</TabsTrigger>
-                      <TabsTrigger value="artwork-only">Artwork only</TabsTrigger>
-                      <TabsTrigger value="combined">Artwork + text</TabsTrigger>
+                    <TabsList className={`grid w-full ${provider === 'fal' ? 'grid-cols-4' : 'grid-cols-3'}`}>
+                      <TabsTrigger value="text-image-ai">Text</TabsTrigger>
+                      <TabsTrigger value="artwork-only">Artwork</TabsTrigger>
+                      <TabsTrigger value="combined">Art+text</TabsTrigger>
                       {provider === 'fal' && (
-                        <TabsTrigger value="text-overlay-ai">AI text + object</TabsTrigger>
+                        <TabsTrigger value="text-overlay-ai">Text+obj</TabsTrigger>
                       )}
                     </TabsList>
                   </Tabs>

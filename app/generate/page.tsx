@@ -1368,7 +1368,8 @@ export default function GeneratePage() {
                 <div className="space-y-2">
                   <Label>Design mode</Label>
                   <Tabs value={designMode} onValueChange={(value) => value && setDesignMode(value as DesignMode)}>
-                    <TabsList className={`grid w-full ${provider === 'fal' ? 'grid-cols-3' : 'grid-cols-2'}`}>
+                    <TabsList className={`grid w-full ${provider === 'fal' ? 'grid-cols-4' : 'grid-cols-3'}`}>
+                      <TabsTrigger value="text-image-ai">Text only</TabsTrigger>
                       <TabsTrigger value="artwork-only">Artwork only</TabsTrigger>
                       <TabsTrigger value="combined">Artwork + text</TabsTrigger>
                       {provider === 'fal' && (
@@ -1377,7 +1378,7 @@ export default function GeneratePage() {
                     </TabsList>
                   </Tabs>
                   <p className="text-xs text-muted-foreground">
-                    Artwork only is the default. Artwork + text composites the title below the artwork.
+                    Text only renders just the title as bold typography artwork — good for the back of a tee. Artwork only is the default. Artwork + text composites the title below the artwork.
                     {provider === 'fal' && ' AI text + object generates both the title and a matching object as separate AI layers — best for bold typography.'}
                   </p>
                 </div>

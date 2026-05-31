@@ -1585,17 +1585,18 @@ export default function GeneratePage() {
                         </Button>
                         <Button
                           type="button"
-                          variant="outline"
-                          onClick={() => {}}
-                          disabled={true}
-                          title="Mac Mini img2img temporarily unavailable: PyTorch MPS limitation on Apple Silicon (VAEEncode). Use fal.ai Kontext for now."
+                          variant={referenceProvider === 'local-img2img' ? 'default' : 'outline'}
+                          onClick={() => setReferenceProvider('local-img2img')}
+                          disabled={referenceSubmitting}
+                          title="Restyles your uploaded image, keeping its composition. Free, runs locally on the Mac Mini (~3min)."
                         >
-                          Mac Mini img2img (unavailable)
+                          Mac Mini restyle (~3min, free)
                         </Button>
                       </div>
                       <p className="text-xs text-muted-foreground">
-                        Cloud generation, paid (~$0.04). Strong style transfer, fast.
-                        Local Mac Mini option is temporarily unavailable due to a PyTorch MPS limitation.
+                        {referenceProvider === 'fal-kontext'
+                          ? 'Kontext: cloud, paid (~$0.04), fast. Creates a new design inspired by the style of your reference image.'
+                          : 'Mac Mini restyle: free, local, ~3min. Restyles your actual uploaded image and keeps its composition — best for reworking an existing design, not inventing a new subject.'}
                       </p>
                     </div>
                     <div className="space-y-2">

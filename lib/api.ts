@@ -387,7 +387,7 @@ export const api = {
   ) =>
     apiFetch<{ ok: boolean; printifyProductId: string; shopId: number; updated: string[]; republished: boolean }>(
       `/api/products/${encodeURIComponent(printifyProductId)}?shopId=${shopId}`,
-      { method: 'PUT', body: JSON.stringify(fields), headers: { 'Content-Type': 'application/json' } }
+      { method: 'PUT', body: fields }
     ),
 
   getProductDetails: (printifyProductId: string, shopId: number) =>
